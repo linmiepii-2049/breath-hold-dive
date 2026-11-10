@@ -27,7 +27,7 @@ import { OceanLife, type SimEvent } from './creatures';
 import { setLang, t } from './i18n';
 import { animateDiver, makeDiver, tintDiver } from './models';
 import { scoreFrame, type FrameSubject, type ScoreBreakdown } from './scoring';
-import { defaultSave, loadSave, writeSave, type SaveData } from './save';
+import { albumReplaces, defaultSave, loadSave, writeSave, type SaveData } from './save';
 import { clampDiver, depthMeters, terrainHeight } from './terrain';
 import {
   createApnea,
@@ -755,6 +755,7 @@ export class Game {
     this.camYaw = this.viewYaw;
     this.viewPitch = clamp(Math.atan2(dy, Math.hypot(dx, dz)), -1, 0.75);
     this.viewfinder = true;
+    this.suppressToggleUntil = performance.now() + 600;
     this.snapFollow();
     this.pushToast('toast.debug');
   }
@@ -802,7 +803,7 @@ export class Game {
 
   private putAlbum(key: string, score: number, dataUrl: string, comment: CommentId): void {
     const prev = this.save.album[key];
-    if (!prev || score > prev.score) this.save.album[key] = { score, dataUrl, comment };
+    if (albumReplaces(prev ? prev.score : null, score)) this.save.album[key] = { score, dataUrl, comment };
   }
 
   private simBreath(dt: number): void {
@@ -1118,7 +1119,10 @@ export class Game {
 
   private ignoreUnlockUntil = 0;
 
+  private suppressToggleUntil = 0;
+
   private toggleViewfinder(): void {
+    if (performance.now() < this.suppressToggleUntil) return;
     if (this.mode !== 'dive' || this.paused) return;
     if (this.viewfinder) {
       this.leaveViewfinder();

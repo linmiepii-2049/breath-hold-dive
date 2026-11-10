@@ -5,7 +5,8 @@ import { clamp } from './util';
 const KEY = 'breath-hold-dive-v1';
 
 export interface SaveData {
-  v: 1;
+  /** 2 keeps v1 progress. Album ties now keep the newer photo. */
+  v: 1 | 2;
   lang: Lang;
   money: number;
   day: number;
@@ -21,7 +22,7 @@ export interface SaveData {
 
 export function defaultSave(): SaveData {
   return {
-    v: 1,
+    v: 2,
     lang: 'zh',
     money: 0,
     day: 1,
@@ -46,7 +47,7 @@ export function loadSave(): SaveData {
     const raw = localStorage.getItem(KEY);
     if (!raw) return defaultSave();
     const data = JSON.parse(raw) as Partial<SaveData>;
-    if (data.v !== 1) return defaultSave();
+    if (data.v !== 1 && data.v !== 2) return defaultSave();
     const base = defaultSave();
     base.lang = data.lang === 'en' ? 'en' : 'zh';
     base.money = Math.max(0, Number(data.money) || 0);
@@ -76,6 +77,11 @@ export function loadSave(): SaveData {
   } catch {
     return defaultSave();
   }
+}
+
+/** A new frame replaces a slot when it ties or beats the stored score. */
+export function albumReplaces(previous: number | null, score: number): boolean {
+  return previous == null || score >= previous;
 }
 
 export function writeSave(save: SaveData): void {
