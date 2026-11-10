@@ -49,6 +49,8 @@ export const BALANCE = {
   /** Fraction of non-best photos added to the payout. */
   otherPhotoPay: 0.25,
   followDist: 11,
+  /** Keyboard yaw while A or D is held. About 105° per second, no snap. */
+  turnRate: 1.83,
   shotCooldown: 0.45,
   grace: 3.5,
 };

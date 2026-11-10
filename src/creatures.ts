@@ -99,6 +99,7 @@ export class OceanLife {
   private prevBait: OceanLife['bait'] = 'flock';
   private prevTurtle = '';
   private debugLock = 0;
+  private debugOcto = false;
 
   constructor(scene: Scene) {
     this.scene = scene;
@@ -199,10 +200,17 @@ export class OceanLife {
       return look(s.x, s.y, s.z, 10, 0);
     }
     if (id === 'octopus') {
+      // Open sand, off the crevice rocks and in front of the kelp band.
+      this.octoX = -18;
+      this.octoZ = 16;
+      this.octoY = terrainHeight(this.octoX, this.octoZ) + 1.25;
       this.displaying = true;
+      this.debugOcto = true;
+      this.octopus.rotation.y = Math.PI;
       this.octopus.userData.displayColor = OCTO_SHOW[0];
-      this.octoY = terrainHeight(this.octoX, this.octoZ) + 0.2;
-      return look(this.octoX, this.octoY + 0.4, this.octoZ, 4.5, 0);
+      animateTail(this.octopus, this.t, 1.4, 0);
+      this.shovePlants(this.octoX, this.octoZ, 10);
+      return look(this.octoX, this.octoY + 0.15, this.octoZ, 5.2, 0);
     }
     if (id === 'shark') {
       this.bait = 'flock';
@@ -215,17 +223,24 @@ export class OceanLife {
       return look(this.sharkA.x, this.sharkA.y, this.sharkA.z, 9, 0);
     }
     if (id === 'orca' || id === 'orcaPass') {
-      const x = 16;
-      const z = 64;
-      const floor = terrainHeight(x, z);
+      // Side-on in open water, above the slope, so the eye patch and dorsal read.
+      const x = -12;
+      const z = 40;
+      const back = id === 'orcaPass' ? 12 : 9;
+      const camZ = z - back;
+      const camFloor = terrainHeight(x, camZ);
+      const feetY = Math.min(BOUNDS.surfaceFeet, camFloor + 1.55);
       this.orcaVisible = true;
       this.passX = x;
       this.orca.x = x;
       this.orca.z = z;
-      this.orca.y = Math.max(floor + 3.2, -34);
-      this.orca.yaw = Math.PI;
+      this.orca.y = feetY + 1.45;
+      this.orca.yaw = Math.PI / 2;
       this.orca.mesh.visible = true;
-      return look(this.orca.x, this.orca.y, this.orca.z, id === 'orcaPass' ? 14 : 9, 0);
+      this.shovePlants(x, z, 14);
+      this.shovePlants(x, camZ, 14);
+      this.poseAll();
+      return { x, y: feetY, z: camZ, yaw: 0, lookX: x, lookY: this.orca.y + 0.15, lookZ: z };
     }
     if (id === 'baitball') {
       this.bait = 'scatter';
@@ -258,6 +273,12 @@ export class OceanLife {
     const out: SimEvent = { hit: null, baitStart: false, turtleStart: false, orcaStart: false };
     if (this.debugLock > 0) {
       this.debugLock = Math.max(0, this.debugLock - dt);
+      if (this.debugOcto) {
+        this.displaying = true;
+        this.octopus.rotation.y = Math.PI;
+        this.octopus.userData.displayColor = OCTO_SHOW[Math.floor(this.t * 1.4) % OCTO_SHOW.length];
+        animateTail(this.octopus, this.t, 1.4, 0);
+      }
       this.poseAll();
       return out;
     }
@@ -272,7 +293,11 @@ export class OceanLife {
 
   private parkAll(): void {
     this.orcaVisible = false;
+    this.debugOcto = false;
     this.bait = 'flock';
+    this.octoX = LANDMARKS.octopus.x;
+    this.octoZ = LANDMARKS.octopus.z;
+    this.octoY = terrainHeight(this.octoX, this.octoZ) + 0.45;
     this.placeSchool(-24, -9, 8, 1.4);
     let i = 0;
     for (const s of this.swimmers) {
@@ -283,6 +308,18 @@ export class OceanLife {
       s.z = 8 + i * 1.4;
       i++;
     }
+  }
+
+  private shovePlants(x: number, z: number, radius: number): void {
+    const r2 = radius * radius;
+    this.scene.traverse((obj) => {
+      if (obj.userData.baseY === undefined) return;
+      const dx = obj.position.x - x;
+      const dz = obj.position.z - z;
+      if (dx * dx + dz * dz > r2) return;
+      obj.position.x += dx >= 0 ? 12 : -12;
+      obj.position.z += dz >= 0 ? 6 : -6;
+    });
   }
 
   private swimmer(species: SpeciesId): Swimmer {
@@ -496,8 +533,8 @@ export class OceanLife {
       state: 'wait',
       timer: 0,
       speed: 4.4,
-      radius: 2.2,
-      optimal: 13,
+      radius: 1.35,
+      optimal: 10,
       rarity: 25,
       dangerous: true,
       wps: [],
@@ -813,9 +850,9 @@ export class OceanLife {
   }
 
   private stepOctopus(): void {
-    const cycle = this.t % 14;
-    this.displaying = cycle > 8;
-    const color = this.displaying ? OCTO_SHOW[Math.floor(this.t / 1.4) % OCTO_SHOW.length] : 0x6a5348;
+    const cycle = this.t % 9;
+    this.displaying = cycle > 3;
+    const color = this.displaying ? OCTO_SHOW[Math.floor(this.t / 0.85) % OCTO_SHOW.length] : 0x6a5348;
     this.octopus.userData.displayColor = color;
     animateTail(this.octopus, this.t, 1.4, 0);
     this.octopus.position.set(this.octoX, this.octoY, this.octoZ);
@@ -901,7 +938,7 @@ export class OceanLife {
       x: this.octoX,
       y: this.octoY + 0.4,
       z: this.octoZ,
-      radius: 0.62,
+      radius: 0.85,
       optimal: 4.2,
       moment: null,
       dangerous: false,

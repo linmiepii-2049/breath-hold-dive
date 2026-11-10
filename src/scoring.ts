@@ -16,6 +16,8 @@ export interface FrameSubject {
   optimal: number;
   moment: MomentId | null;
   dangerous: boolean;
+  /** 1 = unobstructed and not lost in haze. */
+  clarity: number;
 }
 
 export interface ScoreInput {
@@ -74,14 +76,24 @@ function distancePoints(s: FrameSubject): number {
   return 1.5;
 }
 
-/** The moment animal has to be plainly in the picture, not a speck at the edge. */
+/** The moment animal has to be plainly in the picture, not a speck, a haze blob, or a shape behind weed. */
 function momentWorthy(s: FrameSubject): boolean {
   if (!s.moment || !inFrame(s)) return false;
-  if (s.fill < 0.18) return false;
-  if (Math.abs(s.ndcX) > 0.86 || Math.abs(s.ndcY) > 0.86) return false;
+  if (s.clarity < 0.62) return false;
+  const orca = s.species === 'orca' || s.moment === 'orcaPass';
+  if (s.fill < (orca ? 0.24 : 0.18)) return false;
+  const limit = orca ? 0.62 : 0.86;
+  if (Math.abs(s.ndcX) > limit || Math.abs(s.ndcY) > limit) return false;
   const edgeX = Math.abs(s.ndcX) + s.radiusNdcX * 0.45;
   const edgeY = Math.abs(s.ndcY) + s.radiusNdcY * 0.45;
   return edgeX < 1.02 && edgeY < 1.02;
+}
+
+/** Full credit when the subject is easy to see. Heavy haze or occlusion cuts the score. */
+function seenFactor(clarity: number): number {
+  if (clarity >= 0.75) return 1;
+  if (clarity <= 0.15) return 0.3;
+  return 0.3 + ((clarity - 0.15) / 0.6) * 0.7;
 }
 
 export function scoreFrame(input: ScoreInput): ScoreBreakdown {
@@ -114,8 +126,12 @@ export function scoreFrame(input: ScoreInput): ScoreBreakdown {
     };
   }
 
-  const composition = Math.round(clamp(bestComp, 0, 30));
-  const rarity = Math.round(clamp(best.fill < 0.07 ? best.rarity * 0.5 : best.rarity, 0, 25));
+  const seen = seenFactor(best.clarity);
+  const composition = Math.round(clamp(bestComp * seen, 0, 30));
+  let rarityRaw = best.fill < 0.07 ? best.rarity * 0.5 : best.rarity;
+  if (best.species === 'orca' && (best.fill < 0.24 || best.clarity < 0.62)) rarityRaw *= 0.35;
+  rarityRaw *= seen;
+  const rarity = Math.round(clamp(rarityRaw, 0, 25));
 
   let moment = 0;
   let momentId: MomentId | null = null;

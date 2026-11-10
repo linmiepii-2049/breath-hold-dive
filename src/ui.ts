@@ -405,10 +405,12 @@ export class GameUI {
       </div></div>`;
     }
     if (m.judgePhase === 'summary' || m.photos.length === 0) {
+      const best = m.photos.reduce((n, p) => Math.max(n, p.score.total), 0);
       return `<div class="modal"><div class="panel" style="width:min(460px,100%)">
         <p class="dim">${t('judge.kicker')}</p>
-        <h2>${t('judge.total')}</h2>
+        <h2>${t('judge.settle')}</h2>
         <div class="sum">
+          <div>${t('judge.best')}</div><div>${best}</div>
           <div>${t('judge.gross')}</div><div>¥${m.gross}</div>
           <div>${t('judge.fines')}</div><div>¥${m.fines}</div>
           <div>${t('judge.net')}</div><div class="net gold">¥${m.net}</div>
