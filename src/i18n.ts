@@ -1,0 +1,191 @@
+import type { Lang } from './types';
+
+const STR: Record<string, { zh: string; en: string }> = {
+  'logo.sub': { zh: '自由潜摄影', en: 'Freediving photography' },
+  'logo.site': { zh: '礁墙', en: 'Reef Wall' },
+
+  'btn.dive': { zh: '下潜', en: 'Dive' },
+  'btn.train': { zh: '岸上训练', en: 'Shore training' },
+  'btn.shop': { zh: '装备店', en: 'Gear shop' },
+  'btn.album': { zh: '相册图鉴', en: 'Album' },
+  'btn.back': { zh: '返回', en: 'Back' },
+  'btn.reset': { zh: '重置进度', en: 'Reset progress' },
+  'btn.resetConfirm': { zh: '再点一次确认重置', en: 'Click again to confirm' },
+  'btn.start': { zh: '开始', en: 'Start' },
+  'btn.done': { zh: '完成', en: 'Done' },
+  'btn.buy': { zh: '购买', en: 'Buy' },
+  'btn.max': { zh: '已满级', en: 'Maxed' },
+  'btn.endDive': { zh: '结束下潜', en: 'End dive' },
+  'btn.submit': { zh: '提交协会', en: 'Submit' },
+  'btn.next': { zh: '下一张', en: 'Next' },
+  'btn.summary': { zh: '看结算', en: 'Summary' },
+  'btn.shore': { zh: '回到岸上', en: 'Back to shore' },
+  'btn.resume': { zh: '继续下潜', en: 'Resume' },
+  'btn.locked': { zh: '未解锁', en: 'Locked' },
+
+  'shore.blurb': {
+    zh: '一次下潜就是一天。把片子交给深海摄影协会，用奖金换更好的脚蹼、镜头和防寒衣。训练可选，不会被要求。',
+    en: 'One dive is one day. Submit frames to the Deep Sea Photography Association and spend the prize on fins, glass, and neoprene. Training is optional.',
+  },
+  'shore.money': { zh: '奖金', en: 'Prize money' },
+  'shore.day': { zh: '第 {n} 天', en: 'Day {n}' },
+  'shore.lung': { zh: '肺活量', en: 'Lung' },
+  'shore.eff': { zh: '耗氧效率', en: 'O₂ efficiency' },
+  'shore.guide': { zh: '图鉴', en: 'Guide' },
+  'shore.best': { zh: '最高分', en: 'Best' },
+  'shore.controls': { zh: '操作', en: 'Controls' },
+  'shore.c1': { zh: 'WASD 游动 · Space 上浮 · Shift 下潜 · F 或双击 W 冲刺', en: 'WASD swim · Space up · Shift down · F or double-tap W to kick' },
+  'shore.c2': { zh: '按住右键取景 · 滚轮变焦 · 左键快门 · 水面按 E 交卷', en: 'Hold right mouse to frame · wheel to zoom · left click shutter · E at the surface to finish' },
+  'shore.coming': { zh: '蓝洞 · 即将开放', en: 'Blue Hole · coming soon' },
+
+  'train.title': { zh: '岸上训练', en: 'Shore training' },
+  'train.left': { zh: '今日还可训练 {n} 次', en: '{n} session(s) left today' },
+  'train.cap': { zh: '今天的训练做完了。下潜一次，第二天才会重新开放。', en: 'No sessions left today. Finish a dive and a new day opens them again.' },
+  'train.breath': { zh: '呼吸节奏', en: 'Breathing rhythm' },
+  'train.breath.desc': {
+    zh: '跟着节拍按下吸气、屏息、呼气。准度会提高肺活量（氧气上限）。约 45 秒。',
+    en: 'Tap inhale, hold, and exhale on the beat. Accuracy raises lung capacity (your oxygen ceiling). About 45 seconds.',
+  },
+  'train.apnea': { zh: '静态闭气', en: 'Static apnea' },
+  'train.apnea.desc': {
+    zh: '心跳会越来越快。按住空格把心率压在红线以下，越久，下潜时耗氧越慢。约 40 秒。',
+    en: 'The heart speeds up. Hold Space to keep it under the line. Longer control means slower oxygen drain. About 40 seconds.',
+  },
+  'train.phase.inhale': { zh: '吸气', en: 'Inhale' },
+  'train.phase.hold': { zh: '屏息', en: 'Hold' },
+  'train.phase.exhale': { zh: '呼气', en: 'Exhale' },
+  'train.key.inhale': { zh: 'J 或 ↑', en: 'J or ↑' },
+  'train.key.hold': { zh: 'K 或 空格', en: 'K or Space' },
+  'train.key.exhale': { zh: 'L 或 ↓', en: 'L or ↓' },
+  'train.hit': { zh: '按对拍子', en: 'Hit the beat' },
+  'train.perfect': { zh: '完美', en: 'Perfect' },
+  'train.good': { zh: '不错', en: 'Good' },
+  'train.miss': { zh: '错过', en: 'Miss' },
+  'train.acc': { zh: '准确率 {n}%', en: 'Accuracy {n}%' },
+  'train.lungUp': { zh: '肺活量 +{n}%', en: 'Lung +{n}%' },
+  'train.under': { zh: '红线以下 {n} 秒', en: 'Under the line {n}s' },
+  'train.effUp': { zh: '耗氧效率 +{n}%', en: 'Efficiency +{n}%' },
+  'train.capped': { zh: '这项已经练到上限。', en: 'This stat is already capped.' },
+  'train.holdBtn': { zh: '按住', en: 'Hold' },
+  'train.hr': { zh: '心率', en: 'Heart' },
+  'train.line': { zh: '红线', en: 'Line' },
+  'train.time': { zh: '剩余 {n}s', en: 'Time {n}s' },
+
+  'shop.title': { zh: '装备店', en: 'Gear shop' },
+  'shop.fins': { zh: '长脚蹼', en: 'Long fins' },
+  'shop.fins.desc': { zh: '每级游速 +14%，上升也更快一点。', en: 'Each level: +14% swim speed, and a little more ascent speed.' },
+  'shop.lens': { zh: '镜头', en: 'Lens' },
+  'shop.lens.desc': { zh: '每级都放宽取景焦距，广角更广，长焦更长。', en: 'Each level widens the viewfinder: wider wide-angle, longer telephoto.' },
+  'shop.suit': { zh: '防寒衣', en: 'Wetsuit' },
+  'shop.suit.desc': { zh: '每级减少 9% 氧气消耗。', en: 'Each level cuts oxygen drain by 9%.' },
+  'shop.level': { zh: '等级 {n}/3', en: 'Level {n}/3' },
+  'shop.poor': { zh: '奖金不够', en: 'Not enough' },
+  'shop.hole': { zh: '蓝洞', en: 'Blue Hole' },
+  'shop.hole.desc': { zh: '第二个潜点还在测绘。现在去不了。', en: 'The second site is still being charted. Not open yet.' },
+  'shop.soon': { zh: '即将开放', en: 'Coming soon' },
+
+  'album.title': { zh: '相册与图鉴', en: 'Album & field guide' },
+  'album.best': { zh: '最佳 {n}', en: 'Best {n}' },
+  'album.miss': { zh: '尚未拍到', en: 'Not yet photographed' },
+  'album.moment': { zh: '特殊瞬间', en: 'Special moment' },
+
+  'sp.sardine': { zh: '沙丁鱼', en: 'Sardine' },
+  'sp.clownfish': { zh: '小丑鱼', en: 'Clownfish' },
+  'sp.parrotfish': { zh: '鹦嘴鱼', en: 'Parrotfish' },
+  'sp.turtle': { zh: '海龟', en: 'Sea turtle' },
+  'sp.manta': { zh: '蝠鲼', en: 'Manta ray' },
+  'sp.octopus': { zh: '章鱼', en: 'Octopus' },
+  'sp.shark': { zh: '鲨鱼', en: 'Shark' },
+  'sp.orca': { zh: '虎鲸', en: 'Orca' },
+  'hint.sardine': { zh: '浅中层成群游动，偶尔会收成鱼球。', en: 'Schools in the upper reef, and sometimes balls up tight.' },
+  'hint.clownfish': { zh: '守着近岸那丛海葵。', en: 'Stays by the anemone just off the beach.' },
+  'hint.parrotfish': { zh: '在珊瑚上慢慢啃。', en: 'Cruises the coral, nibbling as it goes.' },
+  'hint.turtle': { zh: '礁体间缓游，过一阵会浮到水面换气。', en: 'Glides the reef, then surfaces for a breath.' },
+  'hint.manta': { zh: '中层画着大圈滑翔。', en: 'Glides wide loops in midwater.' },
+  'hint.octopus': { zh: '藏在礁石缝里，隔一会儿会换一身颜色。', en: 'Sits in a crevice and changes color every few seconds.' },
+  'hint.shark': { zh: '沿礁缘巡逻。靠太近会被撞开。', en: 'Patrols the reef edge. Too close and it hits you.' },
+  'hint.orca': { zh: '只在深沟里偶尔掠过，体型很大。', en: 'Passes rarely, and only in the deep trench.' },
+  'mo.baitball': { zh: '鱼球炸开', en: 'Bait ball' },
+  'mo.turtleBreath': { zh: '海龟换气', en: 'Turtle breath' },
+  'mo.orcaPass': { zh: '虎鲸过境', en: 'Orca pass' },
+  'hint.baitball': { zh: '鲨鱼冲进沙丁鱼球，鱼群四散的那几秒。', en: 'The seconds a shark blows the sardine ball apart.' },
+  'hint.turtleBreath': { zh: '海龟把鼻子露出水面的时候。', en: 'The moment the turtle breaks the surface to breathe.' },
+  'hint.orcaPass': { zh: '虎鲸从深水一侧横穿而过。', en: 'The orca crossing through from the deep.' },
+
+  'hud.o2': { zh: '氧气', en: 'Oxygen' },
+  'hud.depth': { zh: '深度', en: 'Depth' },
+  'hud.stamina': { zh: '体力', en: 'Stamina' },
+  'hud.film': { zh: '底片', en: 'Film' },
+  'hud.return': { zh: '氧气可能不够回到水面', en: 'You may not have the oxygen to ascend' },
+  'hud.surface': { zh: '已到水面，氧气不会回复。按 E 交卷。', en: 'Surface. Oxygen does not refill. Press E to finish.' },
+  'hud.legend1': { zh: 'WASD 游 · Space 上 · Shift 下 · F 冲刺', en: 'WASD swim · Space up · Shift down · F kick' },
+  'hud.legend2': { zh: '按住右键取景 · 滚轮焦距 · 左键快门', en: 'Hold RMB to frame · wheel zoom · LMB shutter' },
+  'hud.mm': { zh: '{n} mm', en: '{n} mm' },
+  'hud.nofocus': { zh: '没有主体', en: 'No subject' },
+  'hud.pause': { zh: '暂停', en: 'Paused' },
+  'hud.pauseHint': { zh: '游回水面再按 E 结束。Esc 继续。', en: 'Swim up and press E to finish. Esc resumes.' },
+
+  'toast.descend': { zh: '下潜吧。给上升留够氧气。', en: 'Descend. Save enough oxygen to come back up.' },
+  'toast.kick': { zh: '冲刺', en: 'Kick' },
+  'toast.nofilm': { zh: '底片用完了', en: 'Out of film' },
+  'toast.shark': { zh: '被鲨鱼撞到，被迫上浮', en: 'A shark hit you. Forced ascent.' },
+  'toast.orca': { zh: '被虎鲸带开，被迫上浮', en: 'The orca shoved you. Forced ascent.' },
+  'toast.blackout': { zh: '氧气耗尽，眼前发黑', en: 'Oxygen gone. Blackout.' },
+  'toast.done': { zh: '体力耗尽，只能上浮', en: 'No stamina left. You have to surface.' },
+  'toast.bait': { zh: '鲨鱼冲进鱼群了', en: 'A shark just hit the school.' },
+  'toast.turtle': { zh: '海龟在换气', en: 'The turtle is up for a breath.' },
+  'toast.orcaNear': { zh: '深处有巨大的影子经过', en: 'A huge shape is passing in the deep.' },
+  'toast.shot': { zh: '快门', en: 'Shutter' },
+
+  'judge.kicker': { zh: '深海摄影协会', en: 'Deep Sea Photography Association' },
+  'judge.review': { zh: '冲洗', en: 'Contact sheet' },
+  'judge.none': { zh: '这次没有照片。协会没有可评的作品。', en: 'No frames this dive. Nothing for the jury to score.' },
+  'judge.comp': { zh: '构图', en: 'Composition' },
+  'judge.rarity': { zh: '稀有度', en: 'Rarity' },
+  'judge.moment': { zh: '特殊瞬间', en: 'Special moment' },
+  'judge.danger': { zh: '距离与危险', en: 'Distance & danger' },
+  'judge.total': { zh: '总分', en: 'Total' },
+  'judge.prize': { zh: '奖金', en: 'Prize' },
+  'judge.frame': { zh: '第 {n} 张', en: 'Frame {n}' },
+  'judge.gross': { zh: '作品奖金', en: 'Photo prizes' },
+  'judge.fines': { zh: '救援与损伤', en: 'Rescue & damage' },
+  'judge.net': { zh: '实发', en: 'Paid' },
+  'judge.balance': { zh: '余额', en: 'Balance' },
+  'judge.note': {
+    zh: '取奖金最高的一张全额，其余按 25% 计。罚款从总额里扣，不会扣成负数。照片仍会留在图鉴里。',
+    en: 'The best frame is paid in full, the rest at 25%. Fines come off the total and cannot drop it below zero. Photos still enter the album.',
+  },
+
+  'cmt.empty': { zh: '画面里没有看清的主体。', en: 'Nothing readable in the frame.' },
+  'cmt.closer': { zh: '再靠近一点，主体太小了。', en: 'Get closer. The subject is too small.' },
+  'cmt.framing': { zh: '试试把主体放在三分线上。', en: 'Put the subject on a third.' },
+  'cmt.moment': { zh: '你抓住了那个瞬间。', en: 'You caught the moment.' },
+  'cmt.deep': { zh: '深水的颜色和压力都在画面里。', en: 'Depth is in the frame: color, pressure, and all.' },
+  'cmt.rare': { zh: '对象难得，构图还能更稳。', en: 'A rare subject. The framing can be steadier.' },
+  'cmt.excellent': { zh: '评委席安静了一秒。这张可以上封面。', en: 'The jury went quiet. This could be a cover.' },
+  'cmt.solid': { zh: '扎实的水下照片，协会收下了。', en: 'A solid underwater frame. Accepted.' },
+  'cmt.danger': { zh: '这个距离很危险，勇气算进分数里。', en: 'Dangerous distance. Nerve is part of the score.' },
+  'cmt.school': { zh: '鱼群的银光很有气势。', en: 'The school’s silver mass has real presence.' },
+
+  'desktop': { zh: '这个版本先为桌面键鼠设计。', en: 'This version is built for a desktop keyboard and mouse.' },
+};
+
+let lang: Lang = 'zh';
+
+export function setLang(next: Lang): void {
+  lang = next;
+}
+
+export function getLang(): Lang {
+  return lang;
+}
+
+export function t(key: string): string {
+  const row = STR[key];
+  if (!row) return key;
+  return row[lang];
+}
+
+export function f(key: string, vars: Record<string, string | number>): string {
+  return t(key).replace(/\{(\w+)\}/g, (_, k: string) => String(vars[k] ?? ''));
+}
