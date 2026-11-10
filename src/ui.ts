@@ -2,7 +2,7 @@ import { nextCost } from './balance';
 import { f, t } from './i18n';
 import type { ScoreBreakdown } from './scoring';
 import type { BreathState, ApneaState, BreathPhase } from './training';
-import { breathInto, breathKeys, breathPhase } from './training';
+import { BREATH_WINDOW_END, BREATH_WINDOW_START, breathInto, breathPhase } from './training';
 import type { AlbumEntry, GearId, Lang } from './types';
 import { MOMENTS, SPECIES } from './types';
 
@@ -26,6 +26,7 @@ export interface UIHooks {
   submit(): void;
   nextCard(): void;
   shore(): void;
+  debug(id: string): void;
 }
 
 export interface PhotoView {
@@ -74,6 +75,9 @@ export interface UIModel {
   fines: number;
   net: number;
   album: Record<string, AlbumEntry | undefined>;
+  fpsOn: boolean;
+  fps: number;
+  debug: boolean;
 }
 
 export class GameUI {
@@ -89,9 +93,21 @@ export class GameUI {
     if (key !== this.key) {
       this.key = key;
       this.root.innerHTML = this.html(m);
-      this.bind(m);
+      this.bind();
     }
     if (m.mode === 'dive' || m.mode === 'breath' || m.mode === 'apnea') this.patch(m);
+    this.patchFps(m);
+  }
+
+  private patchFps(m: UIModel): void {
+    let el = this.root.querySelector('#fps') as HTMLElement | null;
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'fps';
+      this.root.appendChild(el);
+    }
+    el.classList.toggle('on', m.fpsOn);
+    if (m.fpsOn) el.textContent = `${m.fps} FPS`;
   }
 
   private html(m: UIModel): string {
@@ -101,11 +117,11 @@ export class GameUI {
     if (m.mode === 'apnea') return this.apneaShell();
     if (m.mode === 'shop') return this.shop(m);
     if (m.mode === 'album') return this.album(m);
-    if (m.mode === 'dive') return this.dive();
+    if (m.mode === 'dive') return this.dive(m);
     return this.judge(m);
   }
 
-  private bind(m: UIModel): void {
+  private bind(): void {
     const q = (id: string) => this.root.querySelector(id);
     q('#dive')?.addEventListener('click', () => this.hooks.dive());
     q('#train')?.addEventListener('click', () => this.hooks.train());
@@ -141,9 +157,12 @@ export class GameUI {
     });
     hold?.addEventListener('pointerup', () => this.hooks.hold(false));
     hold?.addEventListener('pointerleave', () => this.hooks.hold(false));
-    if (m.mode === 'breath' || m.mode === 'apnea') {
-      /* bindings above cover both */
-    }
+    this.root.querySelectorAll<HTMLElement>('[data-debug]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.debug;
+        if (id) this.hooks.debug(id);
+      });
+    });
   }
 
   private shore(m: UIModel): string {
@@ -170,6 +189,7 @@ export class GameUI {
           <div>${t('shore.c1')}</div>
           <div>${t('shore.c2')}</div>
         </div>
+        ${this.debugPanel(m, false)}
         <button class="ghost tiny" id="reset">${m.resetArmed ? t('btn.resetConfirm') : t('btn.reset')}</button>
       </div>
       <div class="stats panel">
@@ -214,18 +234,34 @@ export class GameUI {
     </div></div>`;
   }
 
+  private debugPanel(m: UIModel, floating: boolean): string {
+    if (!m.debug) return '';
+    const species = SPECIES.map((id) => `<button data-debug="${id}">${t(`sp.${id}`)}</button>`).join('');
+    const moments = MOMENTS.map((id) => `<button data-debug="${id}">${t(`mo.${id}`)}</button>`).join('');
+    return `<details class="debug-panel${floating ? ' dive-debug' : ''}">
+      <summary>${t('debug.title')}</summary>
+      <p class="dim">${t('debug.hint')}</p>
+      <div class="debug-btns">${species}${moments}</div>
+    </details>`;
+  }
+
   private breathShell(): string {
     return `<div class="modal"><div class="panel" style="width:min(560px,100%)">
       <div id="play">
         <div class="dim" id="time"></div>
         <div class="phase" id="phase"></div>
-        <div class="dim" id="keyhint"></div>
-        <div class="lane" id="lane"><div class="zone"></div><div class="puck" id="puck"></div></div>
+        <div class="dim" id="how"></div>
+        <div class="keys">
+          <span id="k-inhale">${t('train.phase.inhale')} · J / ↑</span>
+          <span id="k-hold">${t('train.phase.hold')} · K / ${t('train.space')}</span>
+          <span id="k-exhale">${t('train.phase.exhale')} · L / ↓</span>
+        </div>
+        <div class="lane" id="lane"><div class="zone" id="zone">${t('train.zone')}</div><div class="puck" id="puck"></div></div>
         <div id="flashword" style="min-height:1.4em"></div>
         <div class="actions">
-          <button id="pad-inhale">${t('train.phase.inhale')}</button>
-          <button id="pad-hold">${t('train.phase.hold')}</button>
-          <button id="pad-exhale">${t('train.phase.exhale')}</button>
+          <button id="pad-inhale">${t('train.phase.inhale')} · J</button>
+          <button id="pad-hold">${t('train.phase.hold')} · K</button>
+          <button id="pad-exhale">${t('train.phase.exhale')} · L</button>
         </div>
       </div>
       <div id="result" style="display:none">
@@ -302,8 +338,9 @@ export class GameUI {
     </div></div>`;
   }
 
-  private dive(): string {
+  private dive(m: UIModel): string {
     return `
+      ${this.debugPanel(m, true)}
       <div class="hud-tl">
         <div class="lbl">${t('hud.depth')}</div>
         <div class="num" id="depth">0.0</div>
@@ -384,9 +421,9 @@ export class GameUI {
     const p = m.photos[m.judgeIndex] ?? m.photos[0];
     const last = m.judgeIndex >= m.photos.length - 1;
     const who = p.score.species ? t(`sp.${p.score.species}`) : t('hud.nofocus');
-    const moment = p.score.momentId && p.score.moment >= 12 ? ` · ${t(`mo.${p.score.momentId}`)}` : '';
+    const moment = p.score.momentId ? ` · ${t(`mo.${p.score.momentId}`)}` : '';
     const row = (label: string, value: number, max: number) =>
-      `<div class="score-row"><span>${label}</span><div class="track"><span style="width:${(value / max) * 100}%"></span></div><b>${Math.round(value)}</b></div>`;
+      `<div class="score-row"><span>${label}</span><div class="track"><span style="width:${(Math.min(max, value) / max) * 100}%"></span></div><b>${value}</b></div>`;
     return `<div class="modal"><div class="card">
       <p class="kicker">${t('judge.kicker')}</p>
       <h2>${f('judge.frame', { n: m.judgeIndex + 1 })}</h2>
@@ -432,9 +469,19 @@ export class GameUI {
       const el = this.root.querySelector(id);
       if (el) el.textContent = text;
     };
-    set('#phase', t(`train.phase.${phase}`));
-    set('#keyhint', `${t('train.hit')} · ${t(breathKeys(phase))}`);
-    set('#time', f('train.time', { n: Math.max(0, Math.ceil(s.duration - s.t)) }));
+    set('#phase', s.intro > 0 ? t('train.ready') : t(`train.phase.${phase}`));
+    set('#how', t('train.how'));
+    set('#time', s.intro > 0 ? t('train.ready') : f('train.time', { n: Math.max(0, Math.ceil(s.duration - s.t)) }));
+    const zone = this.root.querySelector('#zone') as HTMLElement | null;
+    if (zone) {
+      zone.style.left = `${BREATH_WINDOW_START * 100}%`;
+      zone.style.width = `${(BREATH_WINDOW_END - BREATH_WINDOW_START) * 100}%`;
+    }
+    for (const name of ['inhale', 'hold', 'exhale'] as BreathPhase[]) {
+      const on = s.intro <= 0 && name === phase;
+      this.root.querySelector(`#pad-${name}`)?.classList.toggle('now', on);
+      this.root.querySelector(`#k-${name}`)?.classList.toggle('now', on);
+    }
     const puck = this.root.querySelector('#puck') as HTMLElement | null;
     if (puck) puck.style.left = `${into * 100}%`;
     const lane = this.root.querySelector('#lane');

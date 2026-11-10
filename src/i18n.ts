@@ -43,8 +43,8 @@ const STR: Record<string, { zh: string; en: string }> = {
   'train.cap': { zh: '今天的训练做完了。下潜一次，第二天才会重新开放。', en: 'No sessions left today. Finish a dive and a new day opens them again.' },
   'train.breath': { zh: '呼吸节奏', en: 'Breathing rhythm' },
   'train.breath.desc': {
-    zh: '跟着节拍按下吸气、屏息、呼气。准度会提高肺活量（氧气上限）。约 45 秒。',
-    en: 'Tap inhale, hold, and exhale on the beat. Accuracy raises lung capacity (your oxygen ceiling). About 45 seconds.',
+    zh: '白点每拍从左走到右。它进入右侧亮区时，点按这一拍：吸气 J 或 ↑，屏息 K 或空格，呼气 L 或 ↓。太早按不会作废，进亮区再按即可，按住到亮区也算。约 45 秒。',
+    en: 'The dot travels left to right each beat. When it is inside the bright band, tap that beat: inhale J or ↑, hold K or Space, exhale L or ↓. An early tap does not burn the beat. Holding into the band also counts. About 45 seconds.',
   },
   'train.apnea': { zh: '静态闭气', en: 'Static apnea' },
   'train.apnea.desc': {
@@ -58,6 +58,13 @@ const STR: Record<string, { zh: string; en: string }> = {
   'train.key.hold': { zh: 'K 或 空格', en: 'K or Space' },
   'train.key.exhale': { zh: 'L 或 ↓', en: 'L or ↓' },
   'train.hit': { zh: '按对拍子', en: 'Hit the beat' },
+  'train.how': {
+    zh: '白点进入右侧亮区时，按下高亮的这一拍。太早按没关系。',
+    en: 'Press the highlighted beat while the dot is in the bright band. Early taps are ignored.',
+  },
+  'train.ready': { zh: '准备：先看白点怎么走', en: 'Ready — watch the dot' },
+  'train.zone': { zh: '这时按', en: 'Press' },
+  'train.space': { zh: '空格', en: 'Space' },
   'train.perfect': { zh: '完美', en: 'Perfect' },
   'train.good': { zh: '不错', en: 'Good' },
   'train.miss': { zh: '错过', en: 'Miss' },
@@ -126,6 +133,12 @@ const STR: Record<string, { zh: string; en: string }> = {
   'hud.pauseHint': { zh: '游回水面再按 E 结束。Esc 继续。', en: 'Swim up and press E to finish. Esc resumes.' },
 
   'toast.descend': { zh: '下潜吧。给上升留够氧气。', en: 'Descend. Save enough oxygen to come back up.' },
+  'toast.debug': { zh: '已对准。左键拍摄，Esc 退出取景。', en: 'Lined up. Left click shoots, Esc leaves the viewfinder.' },
+  'debug.title': { zh: '调试', en: 'Debug' },
+  'debug.hint': {
+    zh: '传送到生物前，或摆好一个特殊瞬间。它们会停约 20 秒。氧气和底片会补上。',
+    en: 'Stand in front of a species, or stage a moment. They hold for about 20 seconds. Oxygen and film are refilled.',
+  },
   'toast.kick': { zh: '冲刺', en: 'Kick' },
   'toast.nofilm': { zh: '底片用完了', en: 'Out of film' },
   'toast.shark': { zh: '被鲨鱼撞到，被迫上浮', en: 'A shark hit you. Forced ascent.' },

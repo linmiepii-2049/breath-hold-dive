@@ -74,6 +74,16 @@ function distancePoints(s: FrameSubject): number {
   return 1.5;
 }
 
+/** The moment animal has to be plainly in the picture, not a speck at the edge. */
+function momentWorthy(s: FrameSubject): boolean {
+  if (!s.moment || !inFrame(s)) return false;
+  if (s.fill < 0.18) return false;
+  if (Math.abs(s.ndcX) > 0.86 || Math.abs(s.ndcY) > 0.86) return false;
+  const edgeX = Math.abs(s.ndcX) + s.radiusNdcX * 0.45;
+  const edgeY = Math.abs(s.ndcY) + s.radiusNdcY * 0.45;
+  return edgeX < 1.02 && edgeY < 1.02;
+}
+
 export function scoreFrame(input: ScoreInput): ScoreBreakdown {
   let best: FrameSubject | null = null;
   let bestWeight = -1;
@@ -81,7 +91,8 @@ export function scoreFrame(input: ScoreInput): ScoreBreakdown {
   for (const s of input.subjects) {
     const comp = compositionOf(s);
     if (!inFrame(s)) continue;
-    const weight = comp * 1.15 + s.rarity * 0.55 + Math.min(s.fill, 0.7) * 18 + (s.moment ? 8 : 0);
+    const readable = Math.min(1, s.fill / 0.16);
+    const weight = comp * 1.15 + s.rarity * 0.55 * readable + Math.min(s.fill, 0.7) * 18 + (momentWorthy(s) ? 8 : 0);
     if (weight > bestWeight) {
       bestWeight = weight;
       best = s;
@@ -103,27 +114,21 @@ export function scoreFrame(input: ScoreInput): ScoreBreakdown {
     };
   }
 
-  const composition = clamp(bestComp, 0, 30);
-  const rarity = clamp(best.fill < 0.07 ? best.rarity * 0.5 : best.rarity, 0, 25);
+  const composition = Math.round(clamp(bestComp, 0, 30));
+  const rarity = Math.round(clamp(best.fill < 0.07 ? best.rarity * 0.5 : best.rarity, 0, 25));
 
   let moment = 0;
   let momentId: MomentId | null = null;
+  let momentFill = -1;
   for (const s of input.subjects) {
-    if (!s.moment || !inFrame(s) || s.fill < 0.05) continue;
-    const pts = s.fill >= 0.1 && compositionOf(s) >= 8 ? 25 : 12;
-    if (pts > moment) {
+    if (!momentWorthy(s) || !s.moment) continue;
+    const pts = s.fill >= 0.22 && compositionOf(s) >= 8 ? 25 : 12;
+    if (pts > moment || (pts === moment && s.fill > momentFill)) {
       moment = pts;
       momentId = s.moment;
+      momentFill = s.fill;
     }
   }
-  // The moment only counts if that creature is actually the picture, or shares the frame.
-  if (momentId && best.moment !== momentId) {
-    const carrier = input.subjects.find((s) => s.moment === momentId && inFrame(s));
-    if (!carrier || carrier.fill < 0.08) {
-      moment = Math.min(moment, 12);
-    }
-  }
-  moment = clamp(moment, 0, 25);
 
   const distPart = distancePoints(best);
   let danger = clamp(input.depth / 38, 0, 1) * 5;
@@ -131,9 +136,8 @@ export function scoreFrame(input: ScoreInput): ScoreBreakdown {
   else if (input.nearestPredator < 14) danger += 3;
   if (best.dangerous) danger += 2;
   danger = clamp(danger, 0, 10);
-  const distanceDanger = clamp(distPart + danger, 0, 20);
-
-  const total = clamp(Math.round(composition + rarity + moment + distanceDanger), 0, 100);
+  const distanceDanger = Math.round(clamp(distPart + danger, 0, 20));
+  const total = composition + rarity + moment + distanceDanger;
   const comment = pickComment({
     total,
     composition,
@@ -147,10 +151,10 @@ export function scoreFrame(input: ScoreInput): ScoreBreakdown {
   });
 
   return {
-    composition: Math.round(composition * 10) / 10,
-    rarity: Math.round(rarity * 10) / 10,
-    moment: Math.round(moment * 10) / 10,
-    distanceDanger: Math.round(distanceDanger * 10) / 10,
+    composition,
+    rarity,
+    moment,
+    distanceDanger,
     total,
     species: best.species,
     momentId,

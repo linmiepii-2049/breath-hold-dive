@@ -11,6 +11,7 @@ export interface BreathState {
   hits: number;
   resolved: boolean;
   beatIndex: number;
+  intro: number;
   flash: 'perfect' | 'good' | 'miss' | '';
   flashT: number;
   done: boolean;
@@ -31,18 +32,28 @@ export interface ApneaState {
   gain: number;
 }
 
-const BEAT = 1.92;
 const PHASES: BreathPhase[] = ['inhale', 'hold', 'exhale'];
+
+/** Seconds per inhale / hold / exhale beat. */
+export const BREATH_BEAT = 1.92;
+/** Unscored lead-in so the first beat is not lost while reading. */
+export const BREATH_INTRO = 2.4;
+/** Fraction of the beat where the marker sits in the bright band. */
+export const BREATH_WINDOW_START = 0.5;
+export const BREATH_WINDOW_END = 0.88;
+export const BREATH_PERFECT_START = 0.64;
+export const BREATH_PERFECT_END = 0.78;
 
 export function createBreath(): BreathState {
   return {
     t: 0,
     duration: BALANCE.breathSeconds,
-    beat: BEAT,
+    beat: BREATH_BEAT,
     total: 0,
     hits: 0,
     resolved: false,
     beatIndex: -1,
+    intro: BREATH_INTRO,
     flash: '',
     flashT: 0,
     done: false,
@@ -76,33 +87,55 @@ export function breathInto(state: BreathState): number {
   return (state.t % state.beat) / state.beat;
 }
 
-export function stepBreath(state: BreathState, dt: number, pressed: ReadonlySet<string>, pad: BreathPhase | null): void {
+export function stepBreath(
+  state: BreathState,
+  dt: number,
+  pressed: ReadonlySet<string>,
+  held: ReadonlySet<string>,
+  pad: BreathPhase | null,
+): void {
   if (state.done) return;
-  state.t += dt;
   state.flashT = Math.max(0, state.flashT - dt);
+  if (state.intro > 0) {
+    state.intro -= dt;
+    state.t += dt;
+    if (state.intro <= 0) {
+      state.intro = 0;
+      state.t = 0;
+      state.beatIndex = -1;
+      state.resolved = false;
+    }
+    return;
+  }
+  state.t += dt;
   const idx = Math.floor(state.t / state.beat);
   if (idx !== state.beatIndex && state.t < state.duration) {
     state.beatIndex = idx;
     state.resolved = false;
     state.total += 1;
   }
-  const into = breathInto(state);
-  const phase = breathPhase(state);
   if (!state.resolved && state.total > 0 && state.t < state.duration + 0.2) {
-    const keyOk = phasePressed(phase, pressed) || pad === phase;
-    const wrong = pressed.size > 0 && !keyOk && pad == null;
-    if (keyOk || wrong || (pad && pad !== phase)) {
-      const onBeat = into > 0.58 && into < 0.86;
-      if (keyOk && onBeat) {
-        const perfect = into > 0.66 && into < 0.8;
+    const into = breathInto(state);
+    const phase = breathPhase(state);
+    const keyDown = phasePressed(phase, pressed) || pad === phase;
+    const wrong =
+      (pressed.size > 0 && !phasePressed(phase, pressed) && pad == null) || (pad != null && pad !== phase);
+    if (into < BREATH_WINDOW_START) {
+      // A tap before the band does not burn the beat. Press again inside it.
+    } else if (into <= BREATH_WINDOW_END) {
+      const heldIn = into < BREATH_WINDOW_START + 0.1 && phasePressed(phase, held);
+      if (keyDown || heldIn) {
+        const perfect = into >= BREATH_PERFECT_START && into <= BREATH_PERFECT_END;
         state.hits += perfect ? 1 : 0.65;
         state.flash = perfect ? 'perfect' : 'good';
-      } else {
+        state.flashT = 0.35;
+        state.resolved = true;
+      } else if (wrong) {
         state.flash = 'miss';
+        state.flashT = 0.35;
+        state.resolved = true;
       }
-      state.flashT = 0.35;
-      state.resolved = true;
-    } else if (into > 0.92) {
+    } else {
       state.flash = 'miss';
       state.flashT = 0.28;
       state.resolved = true;
@@ -156,10 +189,4 @@ export function stepApnea(state: ApneaState, dt: number, holding: boolean): void
     const score = clamp(state.under / state.duration, 0, 1);
     state.gain = score * BALANCE.apneaGain;
   }
-}
-
-export function breathKeys(phase: BreathPhase): string {
-  if (phase === 'inhale') return 'train.key.inhale';
-  if (phase === 'hold') return 'train.key.hold';
-  return 'train.key.exhale';
 }
