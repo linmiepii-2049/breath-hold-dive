@@ -65,6 +65,62 @@ const off = scoreFrame({
 });
 assert(off.total === 0, 'off-frame subject is ignored');
 
+for (const shot of [empty, turtle, turtleMoment, orca, clown, off]) {
+  const sum = shot.composition + shot.rarity + shot.moment + shot.distanceDanger;
+  assert(sum === shot.total, `categories ${sum} != total ${shot.total}`);
+}
+
+const shark = subject({
+  species: 'shark',
+  rarity: 20,
+  dangerous: true,
+  fill: 0.34,
+  radiusNdcY: 0.34,
+  ndcX: 0.1,
+  ndcY: -0.1,
+});
+const speck = subject({
+  species: 'orca',
+  rarity: 25,
+  dangerous: true,
+  moment: 'orcaPass',
+  fill: 0.07,
+  radiusNdcX: 0.04,
+  radiusNdcY: 0.07,
+  ndcX: 0.55,
+  ndcY: -0.4,
+  distance: 36,
+  optimal: 13,
+});
+const missed = scoreFrame({ subjects: [shark, speck], depth: 14, nearestPredator: 9 });
+assert(missed.species === 'shark', `speck shot subject ${missed.species}`);
+assert(missed.moment === 0 && missed.momentId === null, 'distant orca is not a special moment');
+assert(missed.composition + missed.rarity + missed.moment + missed.distanceDanger === missed.total, 'speck sum');
+
+const visibleOrca = subject({
+  species: 'orca',
+  rarity: 25,
+  dangerous: true,
+  moment: 'orcaPass',
+  fill: 0.3,
+  radiusNdcX: 0.16,
+  radiusNdcY: 0.3,
+  ndcX: -0.2,
+  ndcY: 0.05,
+  distance: 12,
+  optimal: 13,
+});
+const passing = scoreFrame({ subjects: [shark, visibleOrca], depth: 28, nearestPredator: 6 });
+assert(passing.momentId === 'orcaPass' && passing.moment === 25, `visible pass ${passing.momentId} ${passing.moment}`);
+assert(passing.composition + passing.rarity + passing.moment + passing.distanceDanger === passing.total, 'pass sum');
+
+const quietOrca = scoreFrame({
+  subjects: [subject({ species: 'orca', rarity: 25, dangerous: true, moment: null, fill: 0.3, radiusNdcY: 0.3 })],
+  depth: 28,
+  nearestPredator: 8,
+});
+assert(quietOrca.momentId === null && quietOrca.moment === 0, 'orca without the pass is not the moment');
+
 let prev = -1;
 for (const s of [0, 20, 40, 60, 80, 100]) {
   const prize = prizeForScore(s);

@@ -73,8 +73,17 @@ export class Game {
   private fpCam: PerspectiveCamera;
   private diver: ReturnType<typeof makeDiver>;
   private shadow: Mesh;
-  private rt: WebGLRenderTarget;
+  private shotRts: WebGLRenderTarget[] = [];
+  private shotRtBusy: boolean[] = [];
   private bubbles: Bubble[] = [];
+  private fpsOn = false;
+  private debugOn = false;
+  private fpsShown = 0;
+  private fpsSmooth = 60;
+  private fpsTick = 0;
+  private pendingShots = 0;
+  private wantJudge = false;
+  private wantJudgeAt = 0;
 
   private mode: UIModel['mode'] = 'shore';
   private nonce = 1;
@@ -133,7 +142,6 @@ export class Game {
 
   private forward = new Vector3();
   private proj = new Vector3();
-  private frameBuf = new Uint8Array(480 * 320 * 4);
 
   constructor(private canvas: HTMLCanvasElement, uiRoot: HTMLElement) {
     this.save = loadSave();
@@ -164,8 +172,10 @@ export class Game {
     this.cam = new PerspectiveCamera(48, 1, 0.12, 280);
     this.fpCam = new PerspectiveCamera(46, 1, 0.08, 140);
     this.fpCam.rotation.order = 'YXZ';
-    this.rt = new WebGLRenderTarget(480, 270);
-    this.rt.texture.colorSpace = SRGBColorSpace;
+
+    const params = new URLSearchParams(location.search);
+    this.fpsOn = params.get('fps') === '1';
+    this.debugOn = params.get('debug') === '1';
 
     this.ui = new GameUI(uiRoot, {
       dive: () => this.beginDive(),
@@ -193,6 +203,7 @@ export class Game {
       submit: () => this.submit(),
       nextCard: () => this.nextCard(),
       shore: () => this.open('shore'),
+      debug: (id) => this.debugGo(id),
     });
 
     this.bindInput();
@@ -287,6 +298,14 @@ export class Game {
     const dt = Math.min(0.05, Math.max(0, (now - this.last) / 1000));
     this.last = now;
     this.time += dt;
+    if (dt > 0) {
+      this.fpsSmooth += (1 / dt - this.fpsSmooth) * 0.08;
+      this.fpsTick += dt;
+      if (this.fpsTick >= 0.25) {
+        this.fpsTick = 0;
+        this.fpsShown = Math.round(this.fpsSmooth);
+      }
+    }
     this.tick(dt);
     this.just.clear();
     this.mouseDX = 0;
@@ -298,7 +317,10 @@ export class Game {
   };
 
   private tick(dt: number): void {
-    const diving = this.mode === 'dive' && !this.paused;
+    if (this.wantJudge && this.mode === 'dive' && (this.pendingShots === 0 || performance.now() - this.wantJudgeAt > 2500)) {
+      this.enterJudge();
+    }
+    const diving = this.mode === 'dive' && !this.paused && !this.wantJudge;
     if (diving) this.simDive(dt);
     else if (this.mode === 'breath' && this.breath) this.simBreath(dt);
     else if (this.mode === 'apnea' && this.apnea) this.simApnea(dt);
@@ -513,9 +535,8 @@ export class Game {
     this.audio.shutter();
     const visible = this.diver.visible;
     this.diver.visible = false;
-    const dataUrl = this.grab();
+    this.captureAsync(score);
     this.diver.visible = visible;
-    this.photos.push({ dataUrl, score });
   }
 
   private grade(frames: FrameSubject[]): ScoreBreakdown {
@@ -559,17 +580,49 @@ export class Game {
     return out;
   }
 
-  private grab(): string {
+  private captureAsync(score: ScoreBreakdown): void {
     const w = 480;
     const h = Math.max(160, Math.round(w / Math.max(0.5, this.fpCam.aspect)));
-    if (this.rt.width !== w || this.rt.height !== h) this.rt.setSize(w, h);
+    let slot = this.shotRtBusy.findIndex((busy) => !busy);
+    if (slot < 0) {
+      const rt = new WebGLRenderTarget(w, h);
+      rt.texture.colorSpace = SRGBColorSpace;
+      this.shotRts.push(rt);
+      this.shotRtBusy.push(false);
+      slot = this.shotRts.length - 1;
+    }
+    const slotIndex = slot;
+    const rt = this.shotRts[slotIndex];
+    if (rt.width !== w || rt.height !== h) rt.setSize(w, h);
+    this.shotRtBusy[slotIndex] = true;
     const prev = this.renderer.getRenderTarget();
-    this.renderer.setRenderTarget(this.rt);
+    this.renderer.setRenderTarget(rt);
     this.renderer.render(this.scene, this.fpCam);
-    const need = w * h * 4;
-    if (this.frameBuf.length < need) this.frameBuf = new Uint8Array(need);
-    this.renderer.readRenderTargetPixels(this.rt, 0, 0, w, h, this.frameBuf);
     this.renderer.setRenderTarget(prev);
+    const index = this.photos.length;
+    this.photos.push({ dataUrl: '', score });
+    const buf = new Uint8Array(w * h * 4);
+    this.pendingShots++;
+    const finish = (dataUrl: string) => {
+      if (this.photos[index]) this.photos[index].dataUrl = dataUrl;
+      this.shotRtBusy[slotIndex] = false;
+      this.pendingShots = Math.max(0, this.pendingShots - 1);
+      if (this.mode === 'judge') this.nonce++;
+    };
+    this.renderer.readRenderTargetPixelsAsync(rt, 0, 0, w, h, buf).then(
+      () => finish(this.encodeJpeg(buf, w, h)),
+      () => {
+        try {
+          this.renderer.readRenderTargetPixels(rt, 0, 0, w, h, buf);
+          finish(this.encodeJpeg(buf, w, h));
+        } catch {
+          finish('');
+        }
+      },
+    );
+  }
+
+  private encodeJpeg(buf: Uint8Array, w: number, h: number): string {
     const canvas = document.createElement('canvas');
     canvas.width = w;
     canvas.height = h;
@@ -578,7 +631,7 @@ export class Game {
     const img = ctx.createImageData(w, h);
     for (let y = 0; y < h; y++) {
       const src = (h - 1 - y) * w * 4;
-      img.data.set(this.frameBuf.subarray(src, src + w * 4), y * w * 4);
+      img.data.set(buf.subarray(src, src + w * 4), y * w * 4);
     }
     ctx.putImageData(img, 0, 0);
     return canvas.toDataURL('image/jpeg', 0.62);
@@ -603,15 +656,50 @@ export class Game {
   }
 
   private finishDive(): void {
-    if (this.mode !== 'dive') return;
+    if (this.mode !== 'dive' || this.wantJudge) return;
     this.viewfinder = false;
     if (document.pointerLockElement) document.exitPointerLock();
     this.paused = false;
+    this.wantJudge = true;
+    this.wantJudgeAt = performance.now();
+    if (this.pendingShots === 0) this.enterJudge();
+  }
+
+  private enterJudge(): void {
+    if (this.mode !== 'dive') return;
+    this.wantJudge = false;
     this.mode = 'judge';
     this.judgePhase = 'review';
     this.judgeIndex = 0;
     this.committed = false;
     this.nonce++;
+  }
+
+  private debugGo(id: string): void {
+    if (!this.debugOn) return;
+    if (this.mode !== 'dive') this.beginDive();
+    const pose = this.life.debugTrigger(id);
+    const clamped = clampDiver(pose.x, pose.y, pose.z);
+    this.feet.set(clamped.x, clamped.y, clamped.z);
+    this.velX = 0;
+    this.velZ = 0;
+    this.invuln = 12;
+    this.blackout = false;
+    this.lockSurface = false;
+    this.forcedT = 0;
+    this.stamina = Math.max(this.stamina, 80);
+    this.o2 = maxOxygen(this.save.lung);
+    if (this.filmLeft < 2) this.filmLeft = BALANCE.film;
+    const dx = pose.lookX - this.feet.x;
+    const dy = pose.lookY - (this.feet.y + 1.55);
+    const dz = pose.lookZ - this.feet.z;
+    this.viewYaw = Math.atan2(dx, dz);
+    this.diverYaw = this.viewYaw;
+    this.camYaw = this.viewYaw;
+    this.viewPitch = clamp(Math.atan2(dy, Math.hypot(dx, dz)), -1, 0.75);
+    this.viewfinder = true;
+    this.snapFollow();
+    this.pushToast('toast.debug');
   }
 
   private submit(): void {
@@ -662,7 +750,7 @@ export class Game {
 
   private simBreath(dt: number): void {
     if (!this.breath) return;
-    stepBreath(this.breath, dt, this.just, this.pad);
+    stepBreath(this.breath, dt, this.just, this.keys, this.pad);
     if (this.breath.done) this.applyBreath();
   }
 
@@ -907,6 +995,9 @@ export class Game {
       fines: this.fines,
       net: this.net,
       album: this.save.album,
+      fpsOn: this.fpsOn,
+      fps: this.fpsShown,
+      debug: this.debugOn,
     };
   }
 
@@ -915,6 +1006,10 @@ export class Game {
       this.audio.unlock();
       if (e.repeat) return;
       if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'ArrowDown') e.preventDefault();
+      if (e.code === 'KeyP') {
+        this.fpsOn = !this.fpsOn;
+        return;
+      }
       this.keys.add(e.code);
       this.just.add(e.code);
       if (this.mode === 'dive' && !this.paused) {
@@ -933,9 +1028,11 @@ export class Game {
       this.audio.unlock();
       if (e.button === 0) this.lmb = true;
       if (e.button === 2 && this.mode === 'dive' && !this.paused) {
+        if (!this.viewfinder) {
+          this.viewYaw = this.diverYaw;
+          this.viewPitch = -0.26;
+        }
         this.viewfinder = true;
-        this.viewYaw = this.diverYaw;
-        this.viewPitch = -0.26;
         this.canvas.requestPointerLock();
       }
     });
@@ -946,7 +1043,7 @@ export class Game {
       }
     });
     window.addEventListener('mousemove', (e) => {
-      if (!this.viewfinder) return;
+      if (!this.viewfinder || !document.pointerLockElement) return;
       this.mouseDX += e.movementX;
       this.mouseDY += e.movementY;
     });

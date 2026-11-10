@@ -11,7 +11,7 @@ import {
   M,
   UNIT,
 } from './models';
-import { terrainHeight } from './terrain';
+import { BOUNDS, terrainHeight } from './terrain';
 import type { MomentId, SpeciesId } from './types';
 import { clamp, rng } from './util';
 import type { Scene } from 'three';
@@ -98,6 +98,7 @@ export class OceanLife {
   private passX = -40;
   private prevBait: OceanLife['bait'] = 'flock';
   private prevTurtle = '';
+  private debugLock = 0;
 
   constructor(scene: Scene) {
     this.scene = scene;
@@ -119,6 +120,7 @@ export class OceanLife {
     this.orcaWait = 26;
     this.passX = -42;
     this.orcaVisible = false;
+    this.debugLock = 0;
     this.prevTurtle = 'cruise';
     this.displaying = false;
     this.octoY = terrainHeight(this.octoX, this.octoZ) + 0.15;
@@ -139,9 +141,126 @@ export class OceanLife {
     this.spawnCast();
   }
 
+  /**
+   * Freeze the cast and place one animal, or one special moment, in front of a photo spot.
+   * Only called from the ?debug=1 panel.
+   */
+  debugTrigger(id: string): { x: number; y: number; z: number; yaw: number; lookX: number; lookY: number; lookZ: number } {
+    this.debugLock = 22;
+    this.parkAll();
+    const look = (x: number, y: number, z: number, back: number, yaw: number) => {
+      const px = x - Math.sin(yaw) * back;
+      const pz = z - Math.cos(yaw) * back;
+      const floor = terrainHeight(px, pz);
+      const py = Math.min(BOUNDS.surfaceFeet, Math.max(floor + 1.35, y + 0.2));
+      this.poseAll();
+      return { x: px, y: py, z: pz, yaw, lookX: x, lookY: y, lookZ: z };
+    };
+    if (id === 'sardine') {
+      this.bait = 'flock';
+      this.placeSchool(0, -8, 30, 2.1);
+      return look(0, -8, 30, 8, 0);
+    }
+    if (id === 'clownfish') {
+      const y = terrainHeight(LANDMARKS.anemone.x, LANDMARKS.anemone.z) + 0.9;
+      let i = 0;
+      for (const s of this.swimmers) {
+        if (s.species !== 'clownfish') continue;
+        s.x = LANDMARKS.anemone.x + Math.cos(i) * 0.45;
+        s.y = y;
+        s.z = LANDMARKS.anemone.z + Math.sin(i) * 0.45;
+        i++;
+      }
+      return look(LANDMARKS.anemone.x, y, LANDMARKS.anemone.z, 3.6, 0);
+    }
+    if (id === 'parrotfish') {
+      const s = this.swimmer('parrotfish');
+      s.x = -4;
+      s.y = -7;
+      s.z = 24;
+      s.yaw = Math.PI;
+      return look(s.x, s.y, s.z, 6, 0);
+    }
+    if (id === 'turtle') {
+      this.turtleA.state = 'cruise';
+      this.turtleA.timer = 40;
+      this.turtleA.x = -2;
+      this.turtleA.y = -7;
+      this.turtleA.z = 26;
+      this.turtleA.yaw = Math.PI;
+      return look(this.turtleA.x, this.turtleA.y, this.turtleA.z, 7, 0);
+    }
+    if (id === 'manta') {
+      const s = this.swimmer('manta');
+      s.x = 0;
+      s.y = -12;
+      s.z = 36;
+      s.yaw = Math.PI;
+      return look(s.x, s.y, s.z, 10, 0);
+    }
+    if (id === 'octopus') {
+      this.displaying = true;
+      this.octopus.userData.displayColor = OCTO_SHOW[0];
+      this.octoY = terrainHeight(this.octoX, this.octoZ) + 0.2;
+      return look(this.octoX, this.octoY + 0.4, this.octoZ, 4.5, 0);
+    }
+    if (id === 'shark') {
+      this.bait = 'flock';
+      this.sharkA.state = 'patrol';
+      this.sharkA.timer = 99;
+      this.sharkA.x = 4;
+      this.sharkA.y = -11;
+      this.sharkA.z = 32;
+      this.sharkA.yaw = Math.PI;
+      return look(this.sharkA.x, this.sharkA.y, this.sharkA.z, 9, 0);
+    }
+    if (id === 'orca' || id === 'orcaPass') {
+      const x = 16;
+      const z = 64;
+      const floor = terrainHeight(x, z);
+      this.orcaVisible = true;
+      this.passX = x;
+      this.orca.x = x;
+      this.orca.z = z;
+      this.orca.y = Math.max(floor + 3.2, -34);
+      this.orca.yaw = Math.PI;
+      this.orca.mesh.visible = true;
+      return look(this.orca.x, this.orca.y, this.orca.z, id === 'orcaPass' ? 14 : 9, 0);
+    }
+    if (id === 'baitball') {
+      this.bait = 'scatter';
+      this.baitLeft = 22;
+      this.prevBait = 'scatter';
+      this.placeSchool(1.5, -8, 32, 2.4);
+      this.sharkA.state = 'patrol';
+      this.sharkA.timer = 99;
+      this.sharkA.x = 5.5;
+      this.sharkA.y = -8;
+      this.sharkA.z = 32;
+      this.sharkA.yaw = -Math.PI / 2;
+      return look(1.5, -8, 32, 9, 0);
+    }
+    if (id === 'turtleBreath') {
+      this.turtleA.state = 'breathe';
+      this.turtleA.timer = 22;
+      this.turtleA.x = 2;
+      this.turtleA.y = -0.55;
+      this.turtleA.z = 18;
+      this.turtleA.yaw = Math.PI;
+      return look(2, -1.6, 18, 6.5, 0);
+    }
+    this.debugLock = 0;
+    return { x: 6.2, y: -3.8, z: 9, yaw: 0.15, lookX: 6.2, lookY: -3, lookZ: 16 };
+  }
+
   update(dt: number, diver: Vector3, aggro: boolean, events: boolean): SimEvent {
     this.t += dt;
     const out: SimEvent = { hit: null, baitStart: false, turtleStart: false, orcaStart: false };
+    if (this.debugLock > 0) {
+      this.debugLock = Math.max(0, this.debugLock - dt);
+      this.poseAll();
+      return out;
+    }
     if (events) this.stepEvents(dt, diver, out);
     this.stepBoids(dt);
     this.stepSwimmers(dt, diver, aggro, events, out);
@@ -149,6 +268,60 @@ export class OceanLife {
     this.writeSchool();
     this.rebuildSnaps();
     return out;
+  }
+
+  private parkAll(): void {
+    this.orcaVisible = false;
+    this.bait = 'flock';
+    this.placeSchool(-24, -9, 8, 1.4);
+    let i = 0;
+    for (const s of this.swimmers) {
+      s.state = s.species === 'shark' ? 'patrol' : 'cruise';
+      s.timer = 99;
+      s.x = -30;
+      s.y = -8;
+      s.z = 8 + i * 1.4;
+      i++;
+    }
+  }
+
+  private swimmer(species: SpeciesId): Swimmer {
+    const found = this.swimmers.find((s) => s.species === species);
+    if (!found) throw new Error(species);
+    return found;
+  }
+
+  private placeSchool(x: number, y: number, z: number, spread: number): void {
+    const n = this.boids.length || 1;
+    for (let i = 0; i < this.boids.length; i++) {
+      const a = (i / n) * Math.PI * 2;
+      const r = spread * (0.35 + (i % 5) * 0.1);
+      const b = this.boids[i];
+      b.x = x + Math.cos(a) * r;
+      b.y = y + ((i % 7) - 3) * 0.18;
+      b.z = z + Math.sin(a) * r;
+      b.vx = 0;
+      b.vy = 0;
+      b.vz = 0;
+    }
+    this.homeX = x;
+    this.homeY = y;
+    this.homeZ = z;
+    this.baitX = x;
+    this.baitY = y;
+    this.baitZ = z;
+  }
+
+  private poseAll(): void {
+    this.writeSchool();
+    for (const s of this.swimmers) {
+      s.mesh.visible = s.species === 'orca' ? this.orcaVisible : true;
+      s.mesh.position.set(s.x, s.y, s.z);
+      s.mesh.rotation.y = s.yaw;
+      animateTail(s.mesh, this.t, s.species === 'manta' ? 1.6 : 6, s.phase);
+    }
+    this.octopus.position.set(this.octoX, this.octoY, this.octoZ);
+    this.rebuildSnaps();
   }
 
   predatorDistance(x: number, y: number, z: number): number {
