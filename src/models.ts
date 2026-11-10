@@ -121,19 +121,19 @@ export function makeFish(opt: FishOpts): Group {
   const g = new Group();
   const L = opt.length;
   const H = opt.height;
-  const body = mesh(sphere, opt.color, 0, 0, 0.05 * L, L * 0.48, H * 0.42, H * 0.32);
+  const body = mesh(sphere, opt.color, 0, 0, 0.02 * L, H * 0.36, H * 0.42, L * 0.46);
   g.add(body);
   if (opt.belly !== undefined) {
-    const belly = mesh(sphere, opt.belly, 0, -H * 0.12, 0.05 * L, L * 0.36, H * 0.16, H * 0.22);
+    const belly = mesh(sphere, opt.belly, 0, -H * 0.16, 0.04 * L, H * 0.24, H * 0.16, L * 0.34);
     g.add(belly);
   }
   if (opt.bands) {
     for (let i = 0; i < opt.bands; i++) {
-      const z = -L * 0.05 + i * L * 0.16;
-      g.add(mesh(sphere, 0xf4f7f8, 0, 0, z, H * 0.12, H * 0.44, H * 0.34));
+      const z = L * 0.16 - i * L * 0.16;
+      g.add(mesh(sphere, 0xf4f7f8, 0, 0, z, H * 0.4, H * 0.46, H * 0.07));
     }
   }
-  const dorsal = mesh(sphere, opt.color, 0, H * 0.32, -L * 0.02, H * 0.08, H * 0.28, L * 0.18);
+  const dorsal = mesh(sphere, opt.color, 0, H * 0.36, -L * 0.02, H * 0.08, H * 0.3, L * 0.14);
   g.add(dorsal);
 
   const tailPivot = new Group();
@@ -229,12 +229,42 @@ export function makeOctopus(): Group {
 }
 
 export function makeShark(): Group {
-  const g = makeFish({ length: 3.4, height: 0.85, color: 0x6a7b88, belly: 0xd5dde0 });
-  const fin = mesh(cone, 0x5c6c78, 0, 0.55, -0.1, 0.16, 0.55, 0.16);
-  fin.rotation.z = Math.PI;
-  g.add(fin);
-  g.add(mesh(sphere, 0x617280, -0.55, -0.05, 0.1, 0.38, 0.05, 0.22));
-  g.add(mesh(sphere, 0x617280, 0.55, -0.05, 0.1, 0.38, 0.05, 0.22));
+  const g = new Group();
+  const bodyMat = lambert(0x5c6d7a);
+  const body = new Mesh(sphere, bodyMat);
+  body.scale.set(0.42, 0.4, 1.85);
+  g.add(body);
+  const snout = new Mesh(sphere, bodyMat);
+  snout.scale.set(0.24, 0.2, 0.55);
+  snout.position.set(0, -0.02, 1.55);
+  g.add(snout);
+  const belly = new Mesh(sphere, lambert(0xd5dde2));
+  belly.scale.set(0.28, 0.16, 1.35);
+  belly.position.set(0, -0.26, 0.15);
+  g.add(belly);
+  const dorsal = new Mesh(cone, bodyMat);
+  dorsal.scale.set(0.12, 0.72, 0.28);
+  dorsal.position.set(0, 0.72, 0.05);
+  g.add(dorsal);
+  for (const s of [-1, 1] as const) {
+    const pec = new Mesh(sphere, bodyMat);
+    pec.scale.set(0.55, 0.05, 0.22);
+    pec.position.set(s * 0.55, -0.16, 0.35);
+    pec.rotation.z = s * 0.35;
+    g.add(pec);
+    const eye = new Mesh(sphere, new MeshBasicMaterial({ color: 0x14181c }));
+    eye.scale.set(0.06, 0.06, 0.06);
+    eye.position.set(s * 0.28, 0.08, 1.35);
+    g.add(eye);
+  }
+  const tailPivot = new Group();
+  tailPivot.position.set(0, 0.02, -1.7);
+  const fluke = new Mesh(sphere, bodyMat);
+  fluke.scale.set(0.72, 0.06, 0.28);
+  fluke.position.set(0, 0, -0.12);
+  tailPivot.add(fluke);
+  g.add(tailPivot);
+  g.userData.tail = tailPivot;
   return g;
 }
 

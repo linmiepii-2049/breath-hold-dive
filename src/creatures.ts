@@ -94,10 +94,11 @@ export class OceanLife {
   private orca!: Swimmer;
   private chargeHit = false;
   private orcaHit = false;
+  private orcaTold = false;
+  private baitTold = false;
+  private turtleTold = false;
   private orcaWait = 24;
   private passX = -40;
-  private prevBait: OceanLife['bait'] = 'flock';
-  private prevTurtle = '';
   private debugLock = 0;
   private debugOcto = false;
 
@@ -113,16 +114,17 @@ export class OceanLife {
   reset(): void {
     this.t = 0;
     this.bait = 'flock';
-    this.prevBait = 'flock';
     this.nextBait = 18;
     this.baitLeft = 0;
     this.chargeHit = false;
     this.orcaHit = false;
+    this.orcaTold = false;
+    this.baitTold = false;
+    this.turtleTold = false;
     this.orcaWait = 26;
     this.passX = -42;
     this.orcaVisible = false;
     this.debugLock = 0;
-    this.prevTurtle = 'cruise';
     this.displaying = false;
     this.octoY = terrainHeight(this.octoX, this.octoZ) + 0.15;
     this.boids = [];
@@ -163,16 +165,31 @@ export class OceanLife {
       return look(0, -8, 30, 8, 0);
     }
     if (id === 'clownfish') {
-      const y = terrainHeight(LANDMARKS.anemone.x, LANDMARKS.anemone.z) + 0.9;
+      const x = -16;
+      const z = 14;
+      const y = terrainHeight(x, z) + 1.9;
       let i = 0;
       for (const s of this.swimmers) {
         if (s.species !== 'clownfish') continue;
-        s.x = LANDMARKS.anemone.x + Math.cos(i) * 0.45;
-        s.y = y;
-        s.z = LANDMARKS.anemone.z + Math.sin(i) * 0.45;
+        if (i === 0) {
+          s.x = x;
+          s.y = y;
+          s.z = z;
+          s.yaw = Math.PI / 2 + 0.45;
+        } else {
+          s.x = x - 1.1;
+          s.y = y + (i - 2) * 0.28;
+          s.z = z + 1.1;
+          s.yaw = Math.PI / 2;
+        }
         i++;
       }
-      return look(LANDMARKS.anemone.x, y, LANDMARKS.anemone.z, 3.6, 0);
+      this.shovePlants(x, z, 9);
+      const camZ = z - 2.4;
+      const camFloor = terrainHeight(x, camZ);
+      const feetY = Math.min(BOUNDS.surfaceFeet, Math.max(camFloor + 0.2, y - 1.7));
+      this.poseAll();
+      return { x, y: feetY, z: camZ, yaw: 0, lookX: x, lookY: y + 0.12, lookZ: z };
     }
     if (id === 'parrotfish') {
       const s = this.swimmer('parrotfish');
@@ -203,24 +220,44 @@ export class OceanLife {
       // Open sand, off the crevice rocks and in front of the kelp band.
       this.octoX = -18;
       this.octoZ = 16;
-      this.octoY = terrainHeight(this.octoX, this.octoZ) + 1.25;
+      this.octoY = terrainHeight(this.octoX, this.octoZ) + 1.85;
       this.displaying = true;
       this.debugOcto = true;
       this.octopus.rotation.y = Math.PI;
       this.octopus.userData.displayColor = OCTO_SHOW[0];
       animateTail(this.octopus, this.t, 1.4, 0);
       this.shovePlants(this.octoX, this.octoZ, 10);
-      return look(this.octoX, this.octoY + 0.15, this.octoZ, 5.2, 0);
+      const camZ = this.octoZ - 4.6;
+      const camFloor = terrainHeight(this.octoX, camZ);
+      const feetY = Math.min(BOUNDS.surfaceFeet, Math.max(camFloor + 0.2, this.octoY - 1.75));
+      this.poseAll();
+      return {
+        x: this.octoX,
+        y: feetY,
+        z: camZ,
+        yaw: 0,
+        lookX: this.octoX,
+        lookY: this.octoY + 0.55,
+        lookZ: this.octoZ,
+      };
     }
     if (id === 'shark') {
+      const x = -8;
+      const z = 28;
+      const floor = terrainHeight(x, z);
       this.bait = 'flock';
       this.sharkA.state = 'patrol';
       this.sharkA.timer = 99;
-      this.sharkA.x = 4;
-      this.sharkA.y = -11;
-      this.sharkA.z = 32;
-      this.sharkA.yaw = Math.PI;
-      return look(this.sharkA.x, this.sharkA.y, this.sharkA.z, 9, 0);
+      this.sharkA.x = x;
+      this.sharkA.y = floor + 2.6;
+      this.sharkA.z = z;
+      this.sharkA.yaw = Math.PI / 2 + 0.42;
+      this.shovePlants(x, z, 12);
+      const camZ = z - 8;
+      const camFloor = terrainHeight(x, camZ);
+      const feetY = Math.min(BOUNDS.surfaceFeet, Math.max(camFloor + 0.35, this.sharkA.y - 1.4));
+      this.poseAll();
+      return { x, y: feetY, z: camZ, yaw: 0, lookX: x + 0.4, lookY: this.sharkA.y + 0.15, lookZ: z };
     }
     if (id === 'orca' || id === 'orcaPass') {
       // Side-on in open water, above the slope, so the eye patch and dorsal read.
@@ -231,6 +268,7 @@ export class OceanLife {
       const camFloor = terrainHeight(x, camZ);
       const feetY = Math.min(BOUNDS.surfaceFeet, camFloor + 1.55);
       this.orcaVisible = true;
+      this.orcaTold = true;
       this.passX = x;
       this.orca.x = x;
       this.orca.z = z;
@@ -245,7 +283,7 @@ export class OceanLife {
     if (id === 'baitball') {
       this.bait = 'scatter';
       this.baitLeft = 22;
-      this.prevBait = 'scatter';
+      this.baitTold = true;
       this.placeSchool(1.5, -8, 32, 2.4);
       this.sharkA.state = 'patrol';
       this.sharkA.timer = 99;
@@ -569,8 +607,12 @@ export class OceanLife {
         this.nextBait = 48;
       }
     }
-    if (this.prevBait !== 'scatter' && this.bait === 'scatter') out.baitStart = true;
-    this.prevBait = this.bait;
+    const schoolDist = Math.hypot(this.baitX - diver.x, this.baitY - (diver.y + 1), this.baitZ - diver.z);
+    if (this.bait === 'scatter' && !this.baitTold && schoolDist < 16) {
+      this.baitTold = true;
+      out.baitStart = true;
+    }
+    if (this.bait !== 'scatter') this.baitTold = false;
   }
 
   private stepBoids(dt: number): void {
@@ -681,7 +723,7 @@ export class OceanLife {
         const floor = terrainHeight(s.x, s.z);
         s.y += (floor + 1.3 - s.y) * Math.min(1, dt * 2);
       } else if (s.species === 'turtle') {
-        this.stepTurtle(s, dt, events, out);
+        this.stepTurtle(s, dt, diver, events, out);
       } else if (s.species === 'manta') {
         const ang = this.t * 0.18 + s.phase;
         s.x = Math.sin(ang) * 16 + (s.phase < 1 ? -2 : 6);
@@ -702,7 +744,7 @@ export class OceanLife {
     }
   }
 
-  private stepTurtle(s: Swimmer, dt: number, events: boolean, out: SimEvent): void {
+  private stepTurtle(s: Swimmer, dt: number, diver: Vector3, events: boolean, out: SimEvent): void {
     const leader = s === this.turtleA;
     if (!leader || !events) {
       if (s.state !== 'cruise') s.state = 'cruise';
@@ -738,8 +780,12 @@ export class OceanLife {
         s.timer = 34;
       }
     }
-    if (this.prevTurtle !== 'breathe' && s.state === 'breathe') out.turtleStart = true;
-    this.prevTurtle = s.state;
+    const turtleDist = Math.hypot(s.x - diver.x, s.y - (diver.y + 1), s.z - diver.z);
+    if (s.state === 'breathe' && !this.turtleTold && turtleDist < 12) {
+      this.turtleTold = true;
+      out.turtleStart = true;
+    }
+    if (s.state !== 'breathe') this.turtleTold = false;
   }
 
   private stepShark(s: Swimmer, dt: number, diver: Vector3, aggro: boolean, out: SimEvent): void {
@@ -796,7 +842,7 @@ export class OceanLife {
         this.orcaVisible = true;
         this.passX = -40;
         this.orcaHit = false;
-        out.orcaStart = true;
+        this.orcaTold = false;
       }
       return;
     }
@@ -811,9 +857,14 @@ export class OceanLife {
       this.orcaHit = true;
       out.hit = out.hit ?? 'orca';
     }
+    if (!this.orcaTold && dist < 24 && this.passX > -32 && this.passX < 32) {
+      this.orcaTold = true;
+      out.orcaStart = true;
+    }
     if (this.passX > 36) {
       this.orcaVisible = false;
       this.orcaWait = 50;
+      this.orcaTold = false;
     }
   }
 

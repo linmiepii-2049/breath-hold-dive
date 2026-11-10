@@ -7,4 +7,5 @@ const server = await createServer({
 });
 await server.ssrLoadModule('/scripts/check-scoring.ts');
 await server.ssrLoadModule('/scripts/check-training.ts');
+await server.ssrLoadModule('/scripts/check-album.ts');
 await server.close();
