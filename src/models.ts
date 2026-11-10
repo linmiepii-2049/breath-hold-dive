@@ -10,6 +10,7 @@ import {
   Matrix3,
   Matrix4,
   Mesh,
+  MeshBasicMaterial,
   MeshLambertMaterial,
   Quaternion,
   SphereGeometry,
@@ -223,6 +224,7 @@ export function makeOctopus(): Group {
   g.userData.legs = legs;
   g.userData.bodyMat = bodyMat;
   g.userData.tail = legs[0];
+  g.scale.setScalar(1.4);
   return g;
 }
 
@@ -238,20 +240,49 @@ export function makeShark(): Group {
 
 export function makeOrca(): Group {
   const g = new Group();
-  g.add(mesh(sphere, 0x16181c, 0, 0.1, 0, 1.15, 0.7, 2.5));
-  g.add(mesh(sphere, 0xf2f4f6, 0, -0.22, 0.2, 0.7, 0.28, 1.5));
-  g.add(mesh(sphere, 0xf2f4f6, -0.42, 0.28, 0.85, 0.22, 0.16, 0.32));
-  g.add(mesh(sphere, 0xf2f4f6, 0.42, 0.28, 0.85, 0.22, 0.16, 0.32));
-  const dorsal = mesh(cone, 0x121417, 0, 0.85, -0.15, 0.12, 0.85, 0.18);
+  const black = lambert(0x1c2128);
+  const white = new MeshBasicMaterial({ color: 0xf4f7f8 });
+  const body = new Mesh(sphere, black);
+  body.scale.set(0.82, 0.7, 2.65);
+  g.add(body);
+  const belly = new Mesh(sphere, white);
+  belly.scale.set(0.58, 0.34, 1.85);
+  belly.position.set(0, -0.5, 0.05);
+  g.add(belly);
+  const jaw = new Mesh(sphere, white);
+  jaw.scale.set(0.46, 0.24, 0.9);
+  jaw.position.set(0, -0.42, 1.85);
+  g.add(jaw);
+  for (const s of [-1, 1] as const) {
+    const patch = new Mesh(sphere, white);
+    patch.scale.set(0.22, 0.46, 0.78);
+    patch.position.set(s * 0.74, 0.12, 1.2);
+    g.add(patch);
+    const eye = new Mesh(sphere, new MeshBasicMaterial({ color: 0x141414 }));
+    eye.scale.set(0.09, 0.09, 0.09);
+    eye.position.set(s * 0.96, 0.18, 1.48);
+    g.add(eye);
+    const pec = new Mesh(sphere, black);
+    pec.scale.set(0.62, 0.07, 0.26);
+    pec.position.set(s * 0.9, -0.32, 0.35);
+    pec.rotation.z = s * 0.55;
+    g.add(pec);
+  }
+  const saddle = new Mesh(sphere, white);
+  saddle.scale.set(0.52, 0.18, 0.72);
+  saddle.position.set(0, 0.74, -0.15);
+  g.add(saddle);
+  const dorsal = new Mesh(cone, black);
+  dorsal.scale.set(0.16, 1.2, 0.28);
+  dorsal.position.set(0, 1.15, -0.05);
   g.add(dorsal);
   const tailPivot = new Group();
-  tailPivot.position.set(0, 0, -2.15);
-  tailPivot.add(mesh(sphere, 0x16181c, 0, 0.15, -0.15, 0.85, 0.08, 0.28));
+  tailPivot.position.set(0, 0.05, -2.35);
+  const fluke = new Mesh(sphere, black);
+  fluke.scale.set(1.15, 0.07, 0.34);
+  fluke.position.set(0, 0, -0.12);
+  tailPivot.add(fluke);
   g.add(tailPivot);
-  for (const s of [-1, 1]) {
-    g.add(mesh(sphere, 0xf7f7f7, s * 0.38, 0.22, 1.55, 0.1, 0.1, 0.1));
-    g.add(mesh(sphere, 0x111111, s * 0.4, 0.22, 1.62, 0.05, 0.05, 0.05));
-  }
   g.userData.tail = tailPivot;
   return g;
 }

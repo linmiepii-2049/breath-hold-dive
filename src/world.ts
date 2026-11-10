@@ -100,8 +100,12 @@ export function createWorld(): World {
   snell.position.y = -0.15;
   scene.add(snell);
 
-  scene.add(buildReef());
-  scene.add(buildWall());
+  const reef = buildReef();
+  const wall = buildWall();
+  reef.userData.occluder = true;
+  wall.userData.occluder = true;
+  scene.add(reef);
+  scene.add(wall);
   scene.add(buildBeach());
 
   const anemone = buildAnemone();
@@ -376,6 +380,7 @@ function buildKelp(): Mesh[] {
     const m = new Mesh(new PlaneGeometry(0.7, 3.6 + rand() * 2), mat);
     m.position.set(x, floor + 2.2, z);
     m.userData.baseY = rand() * Math.PI;
+    m.userData.occluder = true;
     m.rotation.y = m.userData.baseY as number;
     list.push(m);
   }
@@ -393,6 +398,7 @@ function buildFans(): Mesh[] {
     const m = new Mesh(new PlaneGeometry(1.6, 2.2), mat);
     m.position.set(x, floor + 1.6, z);
     m.userData.baseY = -0.6;
+    m.userData.occluder = true;
     m.rotation.y = -0.6;
     list.push(m);
   }

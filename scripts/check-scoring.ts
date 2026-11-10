@@ -18,6 +18,7 @@ function subject(partial: Partial<FrameSubject> & Pick<FrameSubject, 'species' |
     optimal: 7,
     moment: null,
     dangerous: false,
+    clarity: 1,
     ...partial,
   };
 }
@@ -120,6 +121,41 @@ const quietOrca = scoreFrame({
   nearestPredator: 8,
 });
 assert(quietOrca.momentId === null && quietOrca.moment === 0, 'orca without the pass is not the moment');
+
+const hazy = scoreFrame({
+  subjects: [
+    subject({
+      species: 'orca',
+      rarity: 25,
+      dangerous: true,
+      moment: 'orcaPass',
+      fill: 0.32,
+      radiusNdcY: 0.32,
+      clarity: 0.35,
+      ndcX: 0.1,
+      ndcY: 0.05,
+    }),
+  ],
+  depth: 30,
+  nearestPredator: 8,
+});
+assert(hazy.moment === 0 && hazy.momentId === null, 'a hazy orca does not score the moment');
+assert(hazy.rarity < 15, `hazy orca rarity ${hazy.rarity}`);
+assert(hazy.composition + hazy.rarity + hazy.moment + hazy.distanceDanger === hazy.total, 'hazy sum');
+
+const blocked = scoreFrame({
+  subjects: [subject({ species: 'octopus', rarity: 25, fill: 0.32, clarity: 0.2, ndcX: 0.2, ndcY: -0.1 })],
+  depth: 10,
+  nearestPredator: 30,
+});
+const clearOcto = scoreFrame({
+  subjects: [subject({ species: 'octopus', rarity: 25, fill: 0.32, clarity: 1, ndcX: 0.2, ndcY: -0.1 })],
+  depth: 10,
+  nearestPredator: 30,
+});
+assert(blocked.composition < clearOcto.composition, 'occlusion cuts composition');
+assert(blocked.rarity < clearOcto.rarity && blocked.rarity <= 12, `blocked rarity ${blocked.rarity}`);
+assert(blocked.composition + blocked.rarity + blocked.moment + blocked.distanceDanger === blocked.total, 'blocked sum');
 
 let prev = -1;
 for (const s of [0, 20, 40, 60, 80, 100]) {

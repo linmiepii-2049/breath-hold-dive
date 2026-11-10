@@ -3,6 +3,8 @@ import {
   CircleGeometry,
   FogExp2,
   Mesh,
+  Object3D,
+  Raycaster,
   MeshBasicMaterial,
   PerspectiveCamera,
   Scene,
@@ -142,6 +144,9 @@ export class Game {
 
   private forward = new Vector3();
   private proj = new Vector3();
+  private rayDir = new Vector3();
+  private ray = new Raycaster();
+  private occluders: Object3D[] = [];
 
   constructor(private canvas: HTMLCanvasElement, uiRoot: HTMLElement) {
     this.save = loadSave();
@@ -157,6 +162,9 @@ export class Game {
 
     this.world = createWorld();
     this.scene = this.world.scene;
+    this.scene.traverse((obj) => {
+      if ((obj as Mesh).isMesh && obj.userData.occluder) this.occluders.push(obj);
+    });
     this.life = new OceanLife(this.scene);
     this.diver = makeDiver();
     tintDiver(this.diver, this.save.gear.suit, this.save.gear.fins);
@@ -271,6 +279,16 @@ export class Game {
     this.viewPitch = pitch;
     this.fov = fov;
     this.syncView();
+  }
+
+  debugState(): { yaw: number; camYaw: number; viewfinder: boolean; fov: number; film: number } {
+    return {
+      yaw: this.diverYaw,
+      camYaw: this.camYaw,
+      viewfinder: this.viewfinder,
+      fov: this.fov,
+      film: this.filmLeft,
+    };
   }
 
   debugShoot(): void {
@@ -427,8 +445,15 @@ export class Game {
   private moveDiver(dt: number, bursting: boolean): void {
     let ix = 0;
     let iz = 0;
-    if (this.keys.has('KeyA')) ix -= 1;
-    if (this.keys.has('KeyD')) ix += 1;
+    if (this.viewfinder) {
+      if (this.keys.has('KeyA')) ix -= 1;
+      if (this.keys.has('KeyD')) ix += 1;
+    } else {
+      let turn = 0;
+      if (this.keys.has('KeyA')) turn -= 1;
+      if (this.keys.has('KeyD')) turn += 1;
+      this.diverYaw += turn * BALANCE.turnRate * dt;
+    }
     if (this.keys.has('KeyW')) iz += 1;
     if (this.keys.has('KeyS')) iz -= 1;
     const len = Math.hypot(ix, iz);
@@ -464,15 +489,11 @@ export class Game {
     const clamped = clampDiver(this.feet.x, this.feet.y, this.feet.z);
     this.feet.set(clamped.x, clamped.y, clamped.z);
 
-    if (!this.viewfinder && Math.hypot(this.velX, this.velZ) > 0.45) {
-      const target = Math.atan2(this.velX, this.velZ);
-      this.diverYaw = lerpAngle(this.diverYaw, target, 1 - Math.exp(-6 * dt));
-    }
     if (this.viewfinder) this.diverYaw = this.viewYaw;
   }
 
   private follow(dt: number): void {
-    this.camYaw = lerpAngle(this.camYaw, this.diverYaw, 1 - Math.exp(-3.1 * dt));
+    this.camYaw = lerpAngle(this.camYaw, this.diverYaw, 1 - Math.exp(-2.2 * dt));
     const dist = BALANCE.followDist;
     const fx = Math.sin(this.camYaw);
     const fz = Math.cos(this.camYaw);
@@ -503,8 +524,10 @@ export class Game {
 
   private syncView(): void {
     if (this.mode === 'dive' && !this.paused) {
-      this.viewYaw += this.mouseDX * 0.00215;
-      this.viewPitch -= this.mouseDY * 0.0017;
+      const lookX = clamp(this.mouseDX, -64, 64);
+      const lookY = clamp(this.mouseDY, -48, 48);
+      this.viewYaw += lookX * 0.0012;
+      this.viewPitch -= lookY * 0.001;
       this.viewPitch = clamp(this.viewPitch, -1.05, 0.8);
       const range = BALANCE.lensFov[this.save.gear.lens];
       this.fov = clamp(this.fov + this.wheel * 0.032, range[0], range[1]);
@@ -539,6 +562,37 @@ export class Game {
     this.diver.visible = visible;
   }
 
+  private visibilityOf(cam: PerspectiveCamera, x: number, y: number, z: number, radius: number, dist: number): number {
+    if (this.occluders.length === 0) return 1;
+    const samples: Array<[number, number, number]> = [
+      [x, y, z],
+      [x + radius * 0.55, y + radius * 0.15, z],
+      [x - radius * 0.55, y + radius * 0.15, z],
+      [x, y + radius * 0.45, z],
+    ];
+    let clear = 0;
+    const origin = cam.position;
+    for (const [sx, sy, sz] of samples) {
+      this.rayDir.set(sx - origin.x, sy - origin.y, sz - origin.z);
+      const len = this.rayDir.length();
+      if (len < 0.25) {
+        clear++;
+        continue;
+      }
+      this.rayDir.multiplyScalar(1 / len);
+      const far = Math.min(dist, len) - Math.max(0.3, radius * 0.2);
+      if (far <= 0.05) {
+        clear++;
+        continue;
+      }
+      this.ray.set(origin, this.rayDir);
+      this.ray.near = 0.05;
+      this.ray.far = far;
+      if (this.ray.intersectObjects(this.occluders, false).length === 0) clear++;
+    }
+    return clear / samples.length;
+  }
+
   private grade(frames: FrameSubject[]): ScoreBreakdown {
     return scoreFrame({
       subjects: frames,
@@ -558,10 +612,13 @@ export class Game {
       const dist = Math.hypot(dx, dy, dz);
       if (dx * this.forward.x + dy * this.forward.y + dz * this.forward.z < 0.25) continue;
       if (dist < 0.35) continue;
-      if (Math.exp(-((fog * dist) ** 2)) < 0.16) continue;
+      const fogT = Math.exp(-((fog * dist) ** 2));
+      if (fogT < 0.16) continue;
       this.proj.set(s.x, s.y, s.z).project(cam);
       const half = (cam.fov * Math.PI) / 360;
       const fill = s.radius / (dist * Math.tan(half));
+      const vis = fill > 0.1 ? this.visibilityOf(cam, s.x, s.y, s.z, s.radius, dist) : 1;
+      const clarity = clamp(fogT * (0.2 + 0.8 * vis), 0, 1);
       out.push({
         species: s.species,
         rarity: s.rarity,
@@ -575,6 +632,7 @@ export class Game {
         optimal: s.optimal,
         moment: s.moment,
         dangerous: s.dangerous,
+        clarity,
       });
     }
     return out;
@@ -657,8 +715,7 @@ export class Game {
 
   private finishDive(): void {
     if (this.mode !== 'dive' || this.wantJudge) return;
-    this.viewfinder = false;
-    if (document.pointerLockElement) document.exitPointerLock();
+    this.leaveViewfinder();
     this.paused = false;
     this.wantJudge = true;
     this.wantJudgeAt = performance.now();
@@ -1027,19 +1084,9 @@ export class Game {
     this.canvas.addEventListener('mousedown', (e) => {
       this.audio.unlock();
       if (e.button === 0) this.lmb = true;
-      if (e.button === 2 && this.mode === 'dive' && !this.paused) {
-        if (!this.viewfinder) {
-          this.viewYaw = this.diverYaw;
-          this.viewPitch = -0.26;
-        }
-        this.viewfinder = true;
-        this.canvas.requestPointerLock();
-      }
-    });
-    window.addEventListener('mouseup', (e) => {
       if (e.button === 2) {
-        this.viewfinder = false;
-        if (document.pointerLockElement) document.exitPointerLock();
+        e.preventDefault();
+        this.toggleViewfinder();
       }
     });
     window.addEventListener('mousemove', (e) => {
@@ -1057,7 +1104,11 @@ export class Game {
       { passive: false },
     );
     document.addEventListener('pointerlockchange', () => {
-      if (!document.pointerLockElement) this.viewfinder = false;
+      if (document.pointerLockElement || !this.viewfinder) return;
+      // Esc drops the lock. Ignore the unlock that follows our own right-click exit,
+      // and a lock the browser releases in the same gesture as entering.
+      if (performance.now() < this.ignoreUnlockUntil) return;
+      this.viewfinder = false;
     });
     window.addEventListener('blur', () => {
       this.keys.clear();
@@ -1065,10 +1116,32 @@ export class Game {
     });
   }
 
+  private ignoreUnlockUntil = 0;
+
+  private toggleViewfinder(): void {
+    if (this.mode !== 'dive' || this.paused) return;
+    if (this.viewfinder) {
+      this.leaveViewfinder();
+      return;
+    }
+    if (performance.now() < this.ignoreUnlockUntil) return;
+    this.viewYaw = this.diverYaw;
+    this.viewPitch = -0.26;
+    this.viewfinder = true;
+    this.ignoreUnlockUntil = performance.now() + 120;
+    const lock = this.canvas.requestPointerLock();
+    void Promise.resolve(lock).catch(() => {});
+  }
+
+  private leaveViewfinder(): void {
+    this.viewfinder = false;
+    this.ignoreUnlockUntil = performance.now() + 120;
+    if (document.pointerLockElement) document.exitPointerLock();
+  }
+
   private onEscape(): void {
     if (this.viewfinder || document.pointerLockElement) {
-      this.viewfinder = false;
-      if (document.pointerLockElement) document.exitPointerLock();
+      this.leaveViewfinder();
       return;
     }
     if (this.mode === 'dive') {
