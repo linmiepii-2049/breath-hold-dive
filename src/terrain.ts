@@ -1,0 +1,53 @@
+import { clamp, smoothstep } from './util';
+
+/**
+ * Reef wall site. +Z swims offshore, +X approaches the wall.
+ * y = 0 is the water surface. Positive y is air / dry sand.
+ */
+export function terrainHeight(x: number, z: number): number {
+  const dunes =
+    Math.sin(x * 0.22 + 0.4) * Math.cos(z * 0.18) * 1.05 +
+    Math.sin(x * 0.51 + z * 0.37) * 0.38;
+
+  let depth = 8 + 11 * smoothstep(4, 50, z);
+  depth += 22 * smoothstep(38, 76, z) * smoothstep(-4, 22, x);
+  let y = -depth + dunes;
+
+  if (z < 4) {
+    const u = smoothstep(4, -8, z);
+    const beach = -0.6 + (4 - z) * 0.22;
+    y = y * (1 - u) + beach * u;
+  }
+
+  // Keep the far corners from spiking above the playable trench.
+  if (z > 8) y = Math.min(y, -4.5 + dunes * 0.25);
+  return y;
+}
+
+export function depthMeters(feetY: number): number {
+  return Math.max(0, -(feetY + 0.9));
+}
+
+export const BOUNDS = {
+  minX: -34,
+  maxX: 30,
+  minZ: 2.4,
+  maxZ: 80,
+  wallX: 28.5,
+  wallZ0: 18,
+  wallZ1: 76,
+  surfaceFeet: -1.88,
+};
+
+export function clampDiver(x: number, y: number, z: number): { x: number; y: number; z: number } {
+  let nx = clamp(x, BOUNDS.minX, BOUNDS.maxX);
+  const nz = clamp(z, BOUNDS.minZ, BOUNDS.maxZ);
+  if (nx > BOUNDS.wallX - 1.2 && nz > BOUNDS.wallZ0 && nz < BOUNDS.wallZ1) {
+    nx = BOUNDS.wallX - 1.2;
+  }
+  const floor = terrainHeight(nx, nz) + 0.06;
+  let ny = Math.max(y, floor);
+  ny = Math.min(ny, BOUNDS.surfaceFeet);
+  if (floor > BOUNDS.surfaceFeet) ny = floor;
+  return { x: nx, y: ny, z: nz };
+}
