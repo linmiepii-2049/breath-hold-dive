@@ -20,6 +20,7 @@ const STR: Record<string, { zh: string; en: string }> = {
   'btn.summary': { zh: '看结算', en: 'Summary' },
   'btn.shore': { zh: '回到岸上', en: 'Back to shore' },
   'btn.resume': { zh: '点击继续转向', en: 'Click to steer' },
+  'btn.resumeTouch': { zh: '继续', en: 'Continue' },
   'btn.locked': { zh: '未解锁', en: 'Locked' },
 
   'shore.blurb': {
@@ -36,7 +37,14 @@ const STR: Record<string, { zh: string; en: string }> = {
   'shore.c1': { zh: '鼠标转向 · Space 沿视线踢水 · F 冲刺踢', en: 'Mouse steers · Space kicks along your look · F sprint kick' },
   'shore.c2': { zh: '右键开关取景 · 滚轮焦距 · 左键快门 · 按 E 结束下潜', en: 'Right click toggles the viewfinder · wheel zoom · left click shutter · Press E to end the dive' },
   'shore.c3': { zh: '浅于约 12 米会上浮，更深处会下沉。头露出水面，氧气立刻回满。', en: 'Above about 12 m you float; deeper, you sink. At the surface, oxygen refills instantly.' },
+  'shore.c1touch': { zh: '右半边滑动转向 · 按住踢水 · 冲刺', en: 'Drag the right half to look · hold Kick · Sprint' },
+  'shore.c2touch': { zh: '相机开取景 · 快门拍摄 · 到水面后点结束下潜', en: 'Camera opens the viewfinder · Shutter shoots · at the surface tap End dive' },
   'shore.sens': { zh: '鼠标灵敏度', en: 'Look sensitivity' },
+  'shore.sensTouch': { zh: '转向灵敏度', en: 'Look sensitivity' },
+  'lang.zh': { zh: '中文', en: '中文' },
+  'lang.en': { zh: 'English', en: 'English' },
+  'mute.on': { zh: '静音', en: 'Mute' },
+  'mute.off': { zh: '打开声音', en: 'Unmute' },
   'shore.coming': { zh: '蓝洞 · 即将开放', en: 'Blue Hole · coming soon' },
 
   'train.title': { zh: '岸上训练', en: 'Shore training' },
@@ -52,6 +60,14 @@ const STR: Record<string, { zh: string; en: string }> = {
     zh: '心跳会越来越快。按住空格把心率压在红线以下，越久，下潜时耗氧越慢。约 40 秒。',
     en: 'The heart speeds up. Hold Space to keep it under the line. Longer control means slower oxygen drain. About 40 seconds.',
   },
+  'train.breath.descTouch': {
+    zh: '白点每拍从左走到右。它进入右侧亮区时，点按这一拍：吸气、屏息、呼气。太早按不会作废，进亮区再按即可，按住到亮区也算。约 45 秒。',
+    en: 'The dot travels left to right each beat. When it is inside the bright band, tap that beat: Inhale, Hold, or Exhale. An early tap does not burn the beat. Holding into the band also counts. About 45 seconds.',
+  },
+  'train.apnea.descTouch': {
+    zh: '心跳会越来越快。按住按钮把心率压在红线以下，越久，下潜时耗氧越慢。约 40 秒。',
+    en: 'The heart speeds up. Hold the button to keep it under the line. Longer control means slower oxygen drain. About 40 seconds.',
+  },
   'train.phase.inhale': { zh: '吸气', en: 'Inhale' },
   'train.phase.hold': { zh: '屏息', en: 'Hold' },
   'train.phase.exhale': { zh: '呼气', en: 'Exhale' },
@@ -62,6 +78,10 @@ const STR: Record<string, { zh: string; en: string }> = {
   'train.how': {
     zh: '白点进入右侧亮区时，按下高亮的这一拍。太早按没关系。',
     en: 'Press the highlighted beat while the dot is in the bright band. Early taps are ignored.',
+  },
+  'train.howTouch': {
+    zh: '白点进入右侧亮区时，点按高亮的这一拍。太早按没关系。',
+    en: 'Tap the highlighted beat while the dot is in the bright band. Early taps are ignored.',
   },
   'train.ready': { zh: '准备：先看白点怎么走', en: 'Ready — watch the dot' },
   'train.zone': { zh: '这时按', en: 'Press' },
@@ -129,16 +149,26 @@ const STR: Record<string, { zh: string; en: string }> = {
     zh: '已到水面，氧气已回满。按 <kbd>E</kbd> 结束下潜，或再潜下去。',
     en: 'At the surface, oxygen is full. Press <kbd>E</kbd> to end the dive, or go back down.',
   },
+  'hud.surfaceTouch': {
+    zh: '已到水面，氧气已回满。点结束下潜，或再潜下去。',
+    en: 'At the surface, oxygen is full. Tap End dive, or go back down.',
+  },
   'hud.legend1': { zh: '鼠标看 · Space 沿视线踢 · F 冲刺', en: 'Mouse looks · Space kicks along look · F sprint' },
   'hud.legend2': { zh: '右键开关取景 · 滚轮焦距 · 左键快门 · Esc 暂停', en: 'Right click toggles viewfinder · wheel zoom · LMB shutter · Esc pauses' },
+  'hud.legend1touch': { zh: '右半边滑动转向 · 按住踢水 · 冲刺', en: 'Drag the right half to look · hold Kick · Sprint' },
+  'hud.legend2touch': { zh: '相机 · 快门 · 暂停', en: 'Camera · Shutter · Pause' },
   'hud.mm': { zh: '{n} mm', en: '{n} mm' },
   'hud.nofocus': { zh: '没有主体', en: 'No subject' },
   'hud.pause': { zh: '暂停', en: 'Paused' },
   'hud.pauseHint': { zh: '点击画面继续转向。按 <kbd>E</kbd> 结束下潜。', en: 'Click to steer again. Press <kbd>E</kbd> to end the dive.' },
   'hud.pauseSteer': { zh: '点击画面继续转向。', en: 'Click to steer again.' },
+  'hud.pauseHintTouch': { zh: '右半边滑动继续转向。点结束下潜可以上岸。', en: 'Drag the right half to look again. Tap End dive to finish.' },
+  'hud.pauseSteerTouch': { zh: '右半边滑动继续转向。', en: 'Drag the right half to look again.' },
 
   'toast.descend': { zh: '正前方外海更深。看向下方，Space 踢下去。', en: 'Open water ahead is deeper. Look down and kick.' },
+  'toast.descendTouch': { zh: '正前方外海更深。看向下方，按住踢水潜下去。', en: 'Open water ahead is deeper. Look down and hold Kick.' },
   'toast.debug': { zh: '已对准。左键拍摄，右键或 Esc 退出取景。', en: 'Lined up. Left click shoots. Right click or Esc leaves the viewfinder.' },
+  'toast.debugTouch': { zh: '已对准。点快门拍摄，再点相机退出取景。', en: 'Lined up. Tap Shutter. Tap Camera to leave the viewfinder.' },
   'debug.title': { zh: '调试', en: 'Debug' },
   'debug.hint': {
     zh: '传送到生物前，或摆好一个特殊瞬间。它们会停约 20 秒。氧气和底片会补上。',

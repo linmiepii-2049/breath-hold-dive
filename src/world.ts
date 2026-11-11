@@ -69,6 +69,8 @@ export interface World {
   sun: import('three').DirectionalLight;
   solids: Solid[];
   update(time: number, camY: number, diverDepth: number): void;
+  /** Full detail draws light shafts. The low tier hides them and eases the fog. */
+  setDetail(full: boolean): void;
 }
 
 export function createWorld(): World {
@@ -144,6 +146,7 @@ export function createWorld(): World {
 
   const shafts = buildShafts();
   shafts.forEach((m) => scene.add(m));
+  let detail = true;
 
   const shallow = new Color('#178f9c');
   const deep = new Color('#07131e');
@@ -166,7 +169,8 @@ export function createWorld(): World {
       const under = Math.min(1, Math.max(0, (0.4 - camY) / 4));
       const waterMix = Math.max(under, diveT * 0.85);
       fog.color.copy(air).lerp(shallow, Math.min(1, waterMix * 1.35)).lerp(deep, diveT);
-      fog.density = 0.008 + waterMix * 0.012 + diveT * 0.042;
+      const haze = 0.008 + waterMix * 0.012 + diveT * 0.042;
+      fog.density = detail ? haze : haze * 0.55;
       hemi.intensity = 1.05 - diveT * 0.42;
       sun.intensity = 1.45 - diveT * 0.62;
       const mat = floor.material as ShaderMaterial;
@@ -185,11 +189,19 @@ export function createWorld(): World {
       fans.forEach((m, i) => {
         m.rotation.y = (m.userData.baseY as number) + Math.sin(time * 0.6 + i) * 0.08;
       });
-      shafts.forEach((m, i) => {
-        const fade = (1 - Math.min(1, diverDepth / 14)) * (camY < 8 ? 1 : 0.45);
-        (m.material as MeshBasicMaterial).opacity = 0.16 * fade;
-        m.rotation.y = Math.sin(time * 0.25 + i) * 0.15;
-        m.position.x = (m.userData.baseX as number) + Math.sin(time * 0.3 + i) * 0.4;
+      if (detail) {
+        shafts.forEach((m, i) => {
+          const fade = (1 - Math.min(1, diverDepth / 14)) * (camY < 8 ? 1 : 0.45);
+          (m.material as MeshBasicMaterial).opacity = 0.16 * fade;
+          m.rotation.y = Math.sin(time * 0.25 + i) * 0.15;
+          m.position.x = (m.userData.baseX as number) + Math.sin(time * 0.3 + i) * 0.4;
+        });
+      }
+    },
+    setDetail(full: boolean) {
+      detail = full;
+      shafts.forEach((m) => {
+        m.visible = full;
       });
     },
   };

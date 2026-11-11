@@ -97,7 +97,7 @@ button:hover:not(:disabled) { filter: brightness(1.08); }
   }
   .dock {
     left: 10px; right: 10px; bottom: 10px; width: auto;
-    max-height: calc(100dvh - 320px);
+    max-height: calc(100dvh - 96px);
     overflow: auto;
   }
   .hud-bc { left: 10px; right: 10px; width: auto; transform: none; bottom: 10px; }
@@ -387,16 +387,52 @@ body.touch #ui.aiming #touch-shutter { visibility: visible; pointer-events: auto
   padding: calc(28px + env(safe-area-inset-top, 0px)) 28px calc(28px + env(safe-area-inset-bottom, 0px));
 }
 .rotate-overlay.on { display: flex; }
+body.touch .btn-name { margin-left: 6px; font-size: 13px; }
 @media (max-height: 430px) {
-  body.touch .modal { padding: 8px; }
-  body.touch .modal .panel {
+  body.touch .brand-zh { font-size: 26px; }
+  body.touch .brand-sub { display: none; }
+  body.touch .stats { display: none; }
+  body.touch .topbar {
+    top: calc(6px + env(safe-area-inset-top, 0px));
+    left: calc(8px + env(safe-area-inset-left, 0px));
+    right: calc(8px + env(safe-area-inset-right, 0px));
+  }
+  body.touch .tools { flex-wrap: nowrap; }
+  body.touch .tools button,
+  body.touch .lang button {
+    min-height: 36px;
+    padding: 4px 8px;
+  }
+  body.touch .dock {
+    left: calc(8px + env(safe-area-inset-left, 0px));
+    right: auto;
+    bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+    width: min(560px, calc(100vw - 16px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)));
+    max-height: calc(100dvh - 64px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+    overflow: hidden;
+    gap: 6px;
+  }
+  body.touch .dock .blurb { display: none; }
+  body.touch .dock-scroll { overflow: auto; min-height: 0; flex: 1 1 auto; }
+  body.touch .dock .actions, body.touch .dock #reset { flex: none; }
+  body.touch .modal {
+    padding: calc(8px + env(safe-area-inset-top, 0px)) 8px calc(8px + env(safe-area-inset-bottom, 0px));
+    align-items: stretch;
+  }
+  body.touch .modal .panel,
+  body.touch .modal .card {
     display: flex;
     flex-direction: column;
-    height: calc(100dvh - 16px);
-    max-height: calc(100dvh - 16px);
-    overflow: auto;
-    padding: 10px 12px;
+    height: 100%;
+    max-height: 100%;
+    overflow: hidden;
+    min-height: 0;
+    margin: 0 auto;
   }
+  body.touch .modal .panel { padding: 10px 12px; }
+  body.touch .card-body,
+  body.touch #play,
+  body.touch #result,
   body.touch .shop-grid,
   body.touch .grid,
   body.touch .cards,
@@ -412,15 +448,14 @@ body.touch #ui.aiming #touch-shutter { visibility: visible; pointer-events: auto
     flex: none;
     margin-top: 8px;
     padding-top: 8px;
-    background: #10202c;
   }
+  body.touch .modal .panel .actions { background: #10202c; }
+  body.touch .modal .card .actions { background: #f4efe4; }
   body.touch .item p { min-height: 0; }
   body.touch .film img { max-height: 22vh; }
-  body.touch .card {
-    max-height: calc(100dvh - 16px);
-    overflow: auto;
-    width: min(460px, calc(100vw - 16px));
-  }
-  body.touch .card img { max-height: 16vh; object-fit: cover; }
+  body.touch .card { width: min(460px, calc(100vw - 16px)); padding: 10px 12px 8px; }
+  body.touch .card img { max-height: 12vh; object-fit: cover; }
+  body.touch .score-row { margin: 3px 0; }
+  body.touch .sum .net { font-size: 22px; }
 }
 .rotate-overlay p { margin: 0; max-width: 16em; font-size: 28px; line-height: 1.4; }

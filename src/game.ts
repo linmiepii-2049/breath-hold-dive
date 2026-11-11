@@ -86,6 +86,13 @@ export class Game {
   private fpsShown = 0;
   private fpsSmooth = 60;
   private fpsTick = 0;
+  /** 1 draws at the capped device pixel ratio. Drops when the frame rate stays under 40. */
+  private renderScale = 1;
+  private lowTier = false;
+  private qualityLow = 0;
+  private qualityHigh = 0;
+  /** Extra gap so the visible mesh stays off sand and rock. */
+  private readonly bodyClear = 0.04;
   private pendingShots = 0;
   private wantJudge = false;
   private wantJudgeAt = 0;
@@ -188,12 +195,17 @@ export class Game {
     document.documentElement.lang = this.save.lang === 'zh' ? 'zh-CN' : 'en';
     this.audio.setMuted(this.save.muted);
 
-    this.renderer = new WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: 'high-performance' });
+    this.renderer = new WebGLRenderer({
+      canvas,
+      antialias: !this.touch,
+      alpha: false,
+      powerPreference: 'high-performance',
+    });
     if (!this.renderer.getContext()) throw new Error('Error creating WebGL context.');
     this.renderer.outputColorSpace = SRGBColorSpace;
     this.renderer.toneMapping = ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+    this.applyPixelRatio();
 
     this.world = createWorld();
     this.scene = this.world.scene;
@@ -343,7 +355,7 @@ export class Game {
     this.snapFollow();
     this.emitBubbles(this.feet.x, this.feet.y + 1.2, this.feet.z, 8);
     this.audio.bubbles();
-    this.pushToast('toast.descend');
+    this.pushToast(this.touch ? 'toast.descendTouch' : 'toast.descend');
     if (this.touch) return;
     const lock = this.canvas.requestPointerLock();
     void Promise.resolve(lock).catch(() => {
@@ -448,6 +460,7 @@ export class Game {
       if (this.fpsTick >= 0.25) {
         this.fpsTick = 0;
         this.fpsShown = Math.round(this.fpsSmooth);
+        this.adaptQuality();
       }
     }
     // Catch up in fixed 1/60 s steps. A hitch can cost at most a quarter second.
@@ -775,6 +788,8 @@ export class Game {
   /** Push every solid off the head, shoulders, torso, and fin tips. */
   private resolveSolids(): void {
     for (let pass = 0; pass < 5; pass++) {
+      const clamped = clampDiver(this.feet.x, this.feet.y, this.feet.z);
+      this.feet.set(clamped.x, clamped.y, clamped.z);
       const rocks = this.world.solids;
       for (let i = 0; i < rocks.length; i++) {
         const s = rocks[i];
@@ -791,8 +806,6 @@ export class Game {
         this.pushSphere(s.x, s.y, s.z, s.r, s.kind);
       }
     }
-    const clamped = clampDiver(this.feet.x, this.feet.y, this.feet.z);
-    this.feet.set(clamped.x, clamped.y, clamped.z);
   }
 
   /**
@@ -898,7 +911,7 @@ export class Game {
     let gap = 0;
     for (let i = 0; i < this.bodyPts.length; i++) {
       const p = this.bodyPts[i];
-      const pen = terrainHeight(p.x, p.z) + p.r - p.y;
+      const pen = terrainHeight(p.x, p.z) + p.r + this.bodyClear - p.y;
       if (pen > gap) gap = pen;
     }
     if (gap > 0) this.applyPush(0, 1, 0, gap, 'sand');
@@ -912,7 +925,7 @@ export class Game {
     let nz = 0;
     for (let i = 0; i < this.bodyPts.length; i++) {
       const p = this.bodyPts[i];
-      const sep = this.boxPush(p.x, p.y, p.z, p.r, s);
+      const sep = this.boxPush(p.x, p.y, p.z, p.r + this.bodyClear, s);
       if (sep && sep.gap > gap) {
         gap = sep.gap;
         nx = sep.nx;
@@ -990,7 +1003,7 @@ export class Game {
       const dy = p.y - y;
       const dz = p.z - z;
       const dist = Math.hypot(dx, dy, dz);
-      const min = p.r + r;
+      const min = p.r + r + this.bodyClear;
       if (dist >= min) continue;
       const len = dist < 1e-4 ? 1 : dist;
       const need = min - (dist < 1e-4 ? 0 : dist);
@@ -1362,7 +1375,7 @@ export class Game {
     this.viewfinder = true;
     this.suppressToggleUntil = performance.now() + 600;
     this.snapFollow();
-    this.pushToast('toast.debug');
+    this.pushToast(this.touch ? 'toast.debugTouch' : 'toast.debug');
   }
 
   private submit(): void {
@@ -1551,6 +1564,10 @@ export class Game {
   }
 
   private placeShadow(): void {
+    if (this.lowTier) {
+      this.shadow.visible = false;
+      return;
+    }
     const y = terrainHeight(this.feet.x, this.feet.z);
     this.shadow.position.set(this.feet.x, y + 0.12, this.feet.z);
     const lift = Math.max(0, this.feet.y - y);
@@ -1574,10 +1591,17 @@ export class Game {
   }
 
   private emitBubbles(x: number, y: number, z: number, n: number): void {
-    let left = n;
+    let left = this.lowTier ? Math.min(n, 1) : n;
+    let alive = 0;
+    if (this.lowTier) {
+      for (const b of this.bubbles) if (b.life > 0) alive++;
+      if (alive >= 6) return;
+    }
     for (const b of this.bubbles) {
       if (left <= 0) break;
       if (b.life > 0) continue;
+      if (this.lowTier && alive >= 6) break;
+      alive++;
       b.life = 0.7 + Math.random() * 0.9;
       b.mesh.visible = true;
       b.mesh.position.set(x + (Math.random() - 0.5) * 0.35, y, z + (Math.random() - 0.5) * 0.35);
@@ -1863,13 +1887,49 @@ export class Game {
   }
 
   private resize = (): void => {
+    this.applyPixelRatio();
     const w = window.innerWidth;
     const h = Math.max(1, window.innerHeight);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
-    this.renderer.setSize(w, h, false);
     this.cam.aspect = w / h;
     this.fpCam.aspect = w / h;
     this.cam.updateProjectionMatrix();
     this.fpCam.updateProjectionMatrix();
   };
+
+  /** Touch stays at 1.5 or below. The scale then drops on a GPU that cannot hold 40 fps. */
+  private applyPixelRatio(): void {
+    const cap = Math.min(window.devicePixelRatio || 1, 1.5);
+    this.renderer.setPixelRatio(cap * this.renderScale);
+    this.renderer.setSize(window.innerWidth, Math.max(1, window.innerHeight), false);
+  }
+
+  /** Step the resolution down while frames stay slow, and ease it back when they recover. */
+  private adaptQuality(): void {
+    const fps = this.fpsShown;
+    if (fps <= 0) return;
+    if (fps < 40) {
+      this.qualityLow += 0.25;
+      this.qualityHigh = 0;
+    } else if (fps > 55) {
+      this.qualityHigh += 0.25;
+      this.qualityLow = 0;
+    } else {
+      this.qualityLow = 0;
+      this.qualityHigh = 0;
+    }
+    let next = this.renderScale;
+    if (this.qualityLow >= 0.5 && this.renderScale > 0.35) {
+      next = Math.max(0.35, Math.round((this.renderScale - 0.12) * 100) / 100);
+      this.qualityLow = 0;
+    } else if (this.qualityHigh >= 1.5 && this.renderScale < 1) {
+      next = Math.min(1, Math.round((this.renderScale + 0.08) * 100) / 100);
+      this.qualityHigh = 0;
+    }
+    const low = next < 0.85;
+    if (next === this.renderScale && low === this.lowTier) return;
+    this.renderScale = next;
+    this.lowTier = low;
+    this.applyPixelRatio();
+    this.world.setDetail(!low);
+  }
 }
