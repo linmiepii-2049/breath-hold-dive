@@ -171,9 +171,11 @@ const STR: Record<string, { zh: string; en: string }> = {
   'toast.debugTouch': { zh: '已对准。点快门拍摄，再点相机退出取景。', en: 'Lined up. Tap Shutter. Tap Camera to leave the viewfinder.' },
   'debug.title': { zh: '调试', en: 'Debug' },
   'debug.hint': {
-    zh: '传送到生物前，或摆好一个特殊瞬间。它们会停约 20 秒。氧气和底片会补上。',
-    en: 'Teleport in front of a species, or stage a moment. They hold for about 20 seconds. Oxygen and film are refilled.',
+    zh: '传送到生物前，或摆好一个特殊瞬间。它们会停约 20 秒。氧气和底片会补上。氧气 3% 和鲨鱼警告不改数值，只方便试黑屏和冲刺。',
+    en: 'Teleport in front of a species, or stage a moment. They hold for about 20 seconds. Oxygen and film are refilled. Oxygen 3% and Shark warning do not change the numbers; they only stage a blackout or a sprint.',
   },
+  'debug.air': { zh: '氧气 3%', en: 'Oxygen 3%' },
+  'debug.warn': { zh: '鲨鱼警告', en: 'Shark warning' },
   'toast.kick': { zh: '冲刺', en: 'Kick' },
   'toast.nofilm': { zh: '底片用完了', en: 'Out of film' },
   'toast.sharkNear': { zh: '鲨鱼转过来了', en: 'A shark is turning in.' },

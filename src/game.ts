@@ -27,7 +27,7 @@ import {
 import { OceanLife, type SimEvent } from './creatures';
 import { setLang, t } from './i18n';
 import { animateDiver, diverStroke, makeDiver, shadeDiver, tintDiver } from './models';
-import { scoreFrame, type FrameSubject, type ScoreBreakdown } from './scoring';
+import { pickSubject, scoreFrame, type FrameSubject, type ScoreBreakdown } from './scoring';
 import { lockLandscape, prefersTouch } from './touch';
 import { albumReplaces, defaultSave, loadSave, writeSave, type SaveData } from './save';
 import { clampDiver, depthMeters, terrainHeight } from './terrain';
@@ -64,6 +64,8 @@ interface Toast {
   key: string;
   ttl: number;
   text?: string;
+  /** Rewritten every frame so the direction matches where the animal is now. */
+  watch?: (s: { x: number; y: number; z: number; moment: string | null; species: string }) => boolean;
 }
 
 export class Game {
@@ -232,6 +234,15 @@ export class Game {
     this.fpsOn = params.get('fps') === '1';
     this.debugOn = params.get('debug') === '1';
     this.life.setDebug(this.debugOn);
+    if (this.debugOn) {
+      const hook = window as unknown as {
+        __bhDebug?: { air: () => void; warn: (meters?: number) => void };
+      };
+      hook.__bhDebug = {
+        air: () => this.debugAir(),
+        warn: (meters?: number) => this.debugWarn(meters ?? 8),
+      };
+    }
 
     this.ui = new GameUI(uiRoot, {
       dive: () => this.beginDive(),
@@ -289,7 +300,11 @@ export class Game {
       submit: () => this.submit(),
       nextCard: () => this.nextCard(),
       shore: () => this.open('shore'),
-      debug: (id) => this.debugGo(id),
+      debug: (id) => {
+        if (id === 'air') this.debugAir();
+        else if (id === 'warn') this.debugWarn(8);
+        else this.debugGo(id);
+      },
     });
 
     this.bindInput();
@@ -613,6 +628,7 @@ export class Game {
         console.error(err);
       }
     }
+    this.refreshMoments();
     this.ui.sync(this.model());
   }
 
@@ -1378,6 +1394,22 @@ export class Game {
     this.pushToast(this.touch ? 'toast.debugTouch' : 'toast.debug');
   }
 
+  /** Drop the tank to about 3% so a reviewer can reach blackout. Drain rates stay the same. */
+  private debugAir(): void {
+    if (!this.debugOn) return;
+    if (this.mode !== 'dive') this.beginDive();
+    this.o2 = maxOxygen(this.save.lung) * 0.03;
+    this.paused = false;
+  }
+
+  /** Start the reef shark's existing warning at a distance. Charge speed and the sprint escape are unchanged. */
+  private debugWarn(meters: number): void {
+    if (!this.debugOn) return;
+    if (this.mode !== 'dive') this.beginDive();
+    this.life.armWarn(this.feet.x, this.feet.y + 1, this.feet.z, meters);
+    this.paused = false;
+  }
+
   private submit(): void {
     if (!this.committed) this.commit();
     this.judgePhase = this.photos.length ? 'card' : 'summary';
@@ -1630,37 +1662,76 @@ export class Game {
     this.toasts.push({ key, ttl, text });
   }
 
-  /** Where a moment is, relative to the way the diver is looking. */
+  /**
+   * Where the animal sits in the picture the player is looking at.
+   * A point in the top-right of the frame reads 上方 · 右前方, and it updates as the camera turns.
+   */
   private bearing(x: number, y: number, z: number): string {
-    const dx = x - this.feet.x;
-    const dy = y - (this.feet.y + 1);
-    const dz = z - this.feet.z;
+    const cam = this.viewfinder ? this.fpCam : this.cam;
+    cam.updateMatrixWorld(true);
+    const p = this.proj.set(x, y, z).project(cam);
+    const en = this.save.lang === 'en';
+    if (p.z < 1) {
+      const vertical = p.y > 0.22 ? (en ? 'above · ' : '上方 · ') : p.y < -0.22 ? (en ? 'below · ' : '下方 · ') : '';
+      let dir: string;
+      if (p.x > 0.55) dir = en ? 'right' : '右侧';
+      else if (p.x > 0.16) dir = en ? 'ahead right' : '右前方';
+      else if (p.x < -0.55) dir = en ? 'left' : '左侧';
+      else if (p.x < -0.16) dir = en ? 'ahead left' : '左前方';
+      else dir = en ? 'ahead' : '前方';
+      return vertical + dir;
+    }
+    const dx = x - cam.position.x;
+    const dz = z - cam.position.z;
     let ang = Math.atan2(dx, dz) - this.viewYaw;
     while (ang > Math.PI) ang -= Math.PI * 2;
     while (ang < -Math.PI) ang += Math.PI * 2;
     const sector = ((Math.round(ang / (Math.PI / 4)) % 8) + 8) % 8;
-    const en = this.save.lang === 'en';
     const dirs = en
       ? ['ahead', 'ahead right', 'right', 'behind right', 'behind', 'behind left', 'left', 'ahead left']
       : ['前方', '右前方', '右侧', '右后方', '后方', '左后方', '左侧', '左前方'];
-    const vertical = dy > 1.4 ? (en ? 'above · ' : '上方 · ') : dy < -1.4 ? (en ? 'below · ' : '下方 · ') : '';
-    return vertical + dirs[sector];
+    return dirs[sector];
   }
 
   private pushMoment(key: string, match: (s: { x: number; y: number; z: number; moment: string | null; species: string }) => boolean): void {
+    let toast = this.toasts.find((item) => item.key === key);
+    if (!toast) {
+      toast = { key, ttl: 5.8 };
+      this.toasts.push(toast);
+    }
+    toast.watch = match;
     const at = this.life.snaps.find(match);
-    const text = at ? `${t(key)} · ${this.bearing(at.x, at.y, at.z)}` : undefined;
-    this.pushToast(key, text, 5.8);
+    if (at) toast.text = `${t(key)} · ${this.bearing(at.x, at.y, at.z)}`;
+  }
+
+  private refreshMoments(): void {
+    if (this.mode !== 'dive') return;
+    for (const toast of this.toasts) {
+      if (!toast.watch) continue;
+      const at = this.life.snaps.find(toast.watch);
+      if (at) toast.text = `${t(toast.key)} · ${this.bearing(at.x, at.y, at.z)}`;
+    }
   }
 
   private model(): UIModel {
     const depth = this.mode === 'dive' ? depthMeters(this.feet.y) : 0;
     const maxO2 = maxOxygen(this.save.lung);
     let focus = '';
+    let aim: UIModel['aim'] = null;
     if (this.mode === 'dive' && this.viewfinder) {
-      const preview = this.grade(this.project(this.fpCam));
+      const frames = this.project(this.fpCam);
+      const preview = this.grade(frames);
+      const picked = pickSubject(frames);
       focus = preview.species ? t(`sp.${preview.species}`) : t('hud.nofocus');
       if (preview.momentId && preview.moment >= 20) focus += ` · ${t(`mo.${preview.momentId}`)}`;
+      if (picked && preview.species === picked.species) {
+        aim = {
+          x: (picked.ndcX * 0.5 + 0.5) * 100,
+          y: ((-picked.ndcY) * 0.5 + 0.5) * 100,
+          w: Math.min(70, Math.max(8, picked.radiusNdcX * 100)),
+          h: Math.min(70, Math.max(10, picked.radiusNdcY * 100)),
+        };
+      }
     }
     const fins = 1 + BALANCE.finsSpeed * this.save.gear.fins;
     const climb = Math.max(0.65, BALANCE.cruiseSpeed * fins + buoyancyAccel(depth));
@@ -1694,6 +1765,7 @@ export class Game {
       viewfinder: this.viewfinder,
       mm: focalMm(this.fov),
       focus,
+      aim,
       paused: this.paused,
       touch: this.touch,
       lookSens: this.save.lookSens,

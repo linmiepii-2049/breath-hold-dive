@@ -66,7 +66,7 @@ const movingOcto = scoreFrame({
       radiusNdcX: 0.14,
       radiusNdcY: 0.28,
       ndcX: 0.05,
-      ndcY: 0.72,
+      ndcY: 0.05,
       distance: 5.5,
       optimal: 4.2,
     }),
@@ -84,7 +84,7 @@ const stillOcto = scoreFrame({
       radiusNdcX: 0.14,
       radiusNdcY: 0.28,
       ndcX: 0.05,
-      ndcY: 0.72,
+      ndcY: 0.05,
       distance: 5.5,
       optimal: 4.2,
     }),
@@ -92,17 +92,112 @@ const stillOcto = scoreFrame({
   depth: 10,
   nearestPredator: 40,
 });
-assert(stillOcto.moment === 0 && stillOcto.total < 60, `still octopus stays out ${stillOcto.total} (${stillOcto.composition}/${stillOcto.rarity}/${stillOcto.moment}/${stillOcto.distanceDanger})`);
+assert(stillOcto.moment === 0 && stillOcto.momentNote === 'none', `still octopus has no moment (${stillOcto.total})`);
 assert(movingOcto.moment === 10 && movingOcto.momentNote === 'action', 'moving octopus earns the action base');
-assert(movingOcto.total >= 60 && movingOcto.total <= 75, `moving octopus passes ${movingOcto.total}`);
-assert(movingOcto.total === stillOcto.total + 10, 'the action line is the only change');
+assert(movingOcto.total === stillOcto.total + 10, `the action line is the only change (${stillOcto.total} -> ${movingOcto.total})`);
+assert(movingOcto.total >= 60 && movingOcto.total <= 80, `moving octopus in the bracket passes ${movingOcto.total}`);
 
 const sloppy = scoreFrame({
   subjects: [subject({ species: 'clownfish', rarity: 10, acting: true, ndcX: 0.92, ndcY: 0.7, fill: 0.1, radiusNdcX: 0.06, radiusNdcY: 0.1 })],
   depth: 6,
   nearestPredator: 40,
 });
-assert(sloppy.moment === 0 && sloppy.total < 60, `sloppy action stays under 60 (${sloppy.total})`);
+assert(sloppy.species === null && sloppy.moment === 0 && sloppy.total === 0, `a corner clownfish is not the subject (${sloppy.total})`);
+
+const cornerTurtle = scoreFrame({
+  subjects: [
+    subject({
+      species: 'turtle',
+      rarity: 16,
+      moment: 'turtleBreath',
+      acting: true,
+      ndcX: 0.78,
+      ndcY: 0.62,
+      fill: 0.22,
+      radiusNdcX: 0.12,
+      radiusNdcY: 0.18,
+    }),
+  ],
+  depth: 6,
+  nearestPredator: 40,
+});
+assert(cornerTurtle.species === null && cornerTurtle.momentId === null, 'a corner turtle is not the subject');
+
+const promptTurtle = scoreFrame({
+  subjects: [
+    subject({
+      species: 'turtle',
+      rarity: 16,
+      moment: 'turtleBreath',
+      acting: true,
+      ndcX: 0.08,
+      ndcY: 0.04,
+      fill: 0.12,
+      radiusNdcX: 0.06,
+      radiusNdcY: 0.12,
+      distance: 15,
+      optimal: 8,
+    }),
+  ],
+  depth: 4,
+  nearestPredator: 40,
+});
+assert(
+  promptTurtle.species === 'turtle' && promptTurtle.momentId === 'turtleBreath' && promptTurtle.moment >= 12,
+  `a breathing turtle inside the bracket scores the moment (${promptTurtle.moment})`,
+);
+
+const school = scoreFrame({
+  subjects: [
+    subject({
+      species: 'sardine',
+      rarity: 14,
+      acting: true,
+      ndcX: 0.7,
+      ndcY: 0.05,
+      fill: 0.9,
+      radiusNdcX: 0.7,
+      radiusNdcY: 0.9,
+    }),
+  ],
+  depth: 8,
+  nearestPredator: 40,
+});
+assert(school.species === null, 'a sardine school outside the bracket is not the subject');
+
+const mixed = scoreFrame({
+  subjects: [
+    subject({
+      species: 'turtle',
+      rarity: 16,
+      moment: 'turtleBreath',
+      acting: true,
+      ndcX: 0.8,
+      ndcY: 0.55,
+      fill: 0.24,
+      radiusNdcX: 0.14,
+      radiusNdcY: 0.2,
+    }),
+    subject({
+      species: 'clownfish',
+      rarity: 12,
+      acting: true,
+      ndcX: 0.04,
+      ndcY: -0.02,
+      fill: 0.2,
+      radiusNdcX: 0.1,
+      radiusNdcY: 0.2,
+      distance: 2.3,
+      optimal: 2.3,
+    }),
+  ],
+  depth: 6,
+  nearestPredator: 40,
+});
+assert(
+  mixed.species === 'clownfish' && mixed.momentId === null && mixed.moment === 10,
+  `the aimed clownfish is the subject, got ${mixed.species} ${mixed.momentId} ${mixed.moment}`,
+);
 
 const actingClown = scoreFrame({
   subjects: [subject({ species: 'clownfish', rarity: 10, acting: true, distance: 2.3, optimal: 2.3, fill: 0.3 })],
@@ -220,7 +315,8 @@ const visibleOrca = subject({
   distance: 12,
   optimal: 13,
 });
-const passing = scoreFrame({ subjects: [shark, visibleOrca], depth: 28, nearestPredator: 6 });
+const aside = subject({ ...shark, ndcX: 0.72, ndcY: 0.4 });
+const passing = scoreFrame({ subjects: [aside, visibleOrca], depth: 28, nearestPredator: 6 });
 assert(passing.momentId === 'orcaPass' && passing.moment === 25, `visible pass ${passing.momentId} ${passing.moment}`);
 assert(passing.composition + passing.rarity + passing.moment + passing.distanceDanger === passing.total, 'pass sum');
 
