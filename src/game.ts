@@ -92,6 +92,10 @@ export class Game {
   private nonce = 1;
   private time = 0;
   private last = 0;
+  /** Leftover wall time waiting for the next 1/60 s physics step. */
+  private accum = 0;
+  private debugLogT = 0;
+  private pushedKind = new Set<string>();
   private resetArmed = false;
 
   private keys = new Set<string>();
@@ -197,6 +201,7 @@ export class Game {
     const params = new URLSearchParams(location.search);
     this.fpsOn = params.get('fps') === '1';
     this.debugOn = params.get('debug') === '1';
+    this.life.setDebug(this.debugOn);
 
     this.ui = new GameUI(uiRoot, {
       dive: () => this.beginDive(),
@@ -279,6 +284,7 @@ export class Game {
     this.shake = 0;
     this.shotCd = 0;
     this.surfaceHold = 0;
+    this.pushedKind.clear();
     this.judgePhase = 'review';
     this.judgeIndex = 0;
     const range = BALANCE.lensFov[this.save.gear.lens];
@@ -387,28 +393,25 @@ export class Game {
   }
 
   private frame = (now: number): void => {
-    const dt = Math.min(0.05, Math.max(0, (now - this.last) / 1000));
+    if (this.last === 0) {
+      this.last = now;
+      requestAnimationFrame(this.frame);
+      return;
+    }
+    const wall = Math.max(0, (now - this.last) / 1000);
     this.last = now;
-    this.time += dt;
-    if (dt > 0) {
-      this.fpsSmooth += (1 / dt - this.fpsSmooth) * 0.08;
-      this.fpsTick += dt;
+    if (wall > 0) {
+      this.fpsSmooth += (1 / wall - this.fpsSmooth) * 0.08;
+      this.fpsTick += wall;
       if (this.fpsTick >= 0.25) {
         this.fpsTick = 0;
         this.fpsShown = Math.round(this.fpsSmooth);
       }
     }
-    this.tick(dt);
-    this.just.clear();
-    this.mouseDX = 0;
-    this.mouseDY = 0;
-    this.wheel = 0;
-    this.lmb = false;
-    this.pad = null;
-    requestAnimationFrame(this.frame);
-  };
+    // Catch up in fixed 1/60 s steps. A hitch can cost at most a quarter second.
+    const frameDt = Math.min(0.25, wall);
+    this.time += frameDt;
 
-  private tick(dt: number): void {
     if (this.wantJudge && this.mode === 'dive' && (this.pendingShots === 0 || performance.now() - this.wantJudgeAt > 2500)) {
       this.enterJudge();
     }
@@ -424,6 +427,35 @@ export class Game {
     } else {
       this.unlockedAt = 0;
     }
+
+    const stepping = !(this.mode === 'dive' && this.paused);
+    if (stepping && this.mode === 'dive' && !this.wantJudge) this.applyLook();
+    if (stepping) {
+      this.accum += frameDt;
+      const step = 1 / 60;
+      let steps = 0;
+      while (this.accum >= step && steps < 15) {
+        this.simFixed(step);
+        this.accum -= step;
+        steps++;
+      }
+      if (this.accum >= step) this.accum = 0;
+    } else {
+      this.accum = 0;
+    }
+
+    this.present(frameDt);
+    this.just.clear();
+    this.mouseDX = 0;
+    this.mouseDY = 0;
+    this.wheel = 0;
+    this.lmb = false;
+    this.pad = null;
+    requestAnimationFrame(this.frame);
+  };
+
+  /** Physics, oxygen, and creature timers. One call is always 1/60 s. */
+  private simFixed(dt: number): void {
     const diving = this.mode === 'dive' && !this.paused && !this.wantJudge;
     if (diving) this.simDive(dt);
     else if (this.mode === 'breath' && this.breath) this.simBreath(dt);
@@ -435,6 +467,13 @@ export class Game {
       const ev = this.life.update(dt, this.forward, diving, diving);
       if (diving) this.onSim(ev);
       this.updateBubbles(dt);
+    }
+  }
+
+  /** Camera, audio, and the draw. `dt` is this frame's wall time, capped at 0.25 s. */
+  private present(dt: number): void {
+    const diving = this.mode === 'dive' && !this.paused && !this.wantJudge;
+    if (!(this.mode === 'dive' && this.paused)) {
       if (this.mode === 'dive') this.diver.visible = !this.viewfinder;
       if (diving && this.viewfinder) {
         this.syncView();
@@ -451,6 +490,35 @@ export class Game {
       const depth = this.mode === 'dive' ? depthMeters(this.feet.y) : 0;
       this.world.update(this.time, this.cam.position.y, depth);
       moveSnell(this.world.snell, this.cam.position.x, this.cam.position.z);
+      if (this.debugOn && this.mode === 'dive') {
+        this.debugLogT += dt;
+        if (this.debugLogT >= 0.5) {
+          this.debugLogT = 0;
+          let near = 99;
+          let nearKind = '-';
+          let nearAt = '0,0,0';
+          const bodies = this.life.bodies();
+          for (let i = 0; i < bodies.length; i++) {
+            const b = bodies[i];
+            const d = Math.hypot(b.x - this.feet.x, b.y - (this.feet.y + 0.4), b.z - this.feet.z);
+            if (d < near) {
+              near = d;
+              nearKind = b.kind;
+              nearAt = `${b.x.toFixed(1)},${b.y.toFixed(1)},${b.z.toFixed(1)}`;
+            }
+          }
+          let rockD = 99;
+          const solids = this.world.solids;
+          for (let i = 0; i < solids.length; i++) {
+            const s = solids[i];
+            const d = Math.hypot(s.x - this.feet.x, s.y - (this.feet.y + 0.4), s.z - this.feet.z);
+            if (d < rockD) rockD = d;
+          }
+          console.info(
+            `[dive] x=${this.feet.x.toFixed(2)} y=${this.feet.y.toFixed(2)} z=${this.feet.z.toFixed(2)} depth=${depth.toFixed(2)} yaw=${this.viewYaw.toFixed(2)} pitch=${this.viewPitch.toFixed(2)} near=${nearKind}:${near.toFixed(1)} at=${nearAt} rock=${rockD.toFixed(1)}`,
+          );
+        }
+      }
     }
 
     this.flash = Math.max(0, this.flash - dt * 3.2);
@@ -503,21 +571,22 @@ export class Game {
       this.pushToast('toast.blackout');
     }
 
-    this.applyLook();
     this.moveDiver(dt, bursting);
     if (headAtSurface(this.feet.y) && !this.lockSurface && !this.blackout) {
       this.o2 = maxOxygen(this.save.lung);
     }
-    const atSurface = depthMeters(this.feet.y) < BALANCE.surfaceDepth + 0.2;
+    const depthNow = depthMeters(this.feet.y);
+    const bobbing = depthNow < BALANCE.surfaceUi;
+    const wideSurface = depthNow < BALANCE.surfaceDepth + 0.2;
     // Reaching the surface refills oxygen and stays in the dive. The judge card
     // opens only from E, or after a blackout / forced ascent has held them there.
-    if ((this.lockSurface || this.stamina <= 0) && atSurface) {
+    if ((this.lockSurface || this.stamina <= 0) && wideSurface) {
       this.surfaceHold += dt;
       if (this.surfaceHold > 0.65) this.finishDive();
     } else {
       this.surfaceHold = 0;
     }
-    if (atSurface && this.just.has('KeyE')) this.finishDive();
+    if (bobbing && this.just.has('KeyE')) this.finishDive();
 
     const swim = Math.hypot(this.velX, this.velY, this.velZ);
     const kicking = this.keys.has('Space') || bursting;
@@ -627,6 +696,73 @@ export class Game {
     if (clamped.y > nextY + 0.02 && this.velY < 0) this.velY = 0;
     if (clamped.y < nextY - 0.02 && this.velY > 0) this.velY = 0;
     this.feet.set(clamped.x, clamped.y, clamped.z);
+    this.resolveSolids();
+  }
+
+  /** Capsule push along the prone body. Turtles shove; they do not bite. */
+  private resolveSolids(): void {
+    this.fillLook(this.viewYaw, this.viewPitch, this.look);
+    const reach = 8;
+    for (let pass = 0; pass < 2; pass++) {
+      const rocks = this.world.solids;
+      for (let i = 0; i < rocks.length; i++) {
+        const s = rocks[i];
+        if (Math.abs(s.x - this.feet.x) > reach || Math.abs(s.z - this.feet.z) > reach) continue;
+        this.pushBody(s.x, s.y, s.z, s.r, 'rock');
+      }
+      const bodies = this.life.bodies();
+      for (let i = 0; i < bodies.length; i++) {
+        const s = bodies[i];
+        if (Math.abs(s.x - this.feet.x) > reach || Math.abs(s.z - this.feet.z) > reach) continue;
+        this.pushBody(s.x, s.y, s.z, s.r, s.kind);
+      }
+    }
+    const clamped = clampDiver(this.feet.x, this.feet.y, this.feet.z);
+    this.feet.set(clamped.x, clamped.y, clamped.z);
+  }
+
+  /** Three spheres along the look, so a horizontal body still bumps low rocks. */
+  private pushBody(x: number, y: number, z: number, r: number, kind: string): void {
+    const along = [0.2, 0.75, 1.2];
+    for (let i = 0; i < along.length; i++) {
+      const t = along[i];
+      const px = this.feet.x + this.look.x * t;
+      const py = this.feet.y + 0.32 + this.look.y * t;
+      const pz = this.feet.z + this.look.z * t;
+      this.pushOut(px, py, pz, x, y, z, r, kind);
+    }
+  }
+
+  private pushOut(px: number, py: number, pz: number, x: number, y: number, z: number, r: number, kind: string): void {
+    let dx = px - x;
+    let dy = py - y;
+    let dz = pz - z;
+    const dist = Math.hypot(dx, dy, dz);
+    const min = 0.34 + r;
+    if (dist >= min) return;
+    if (dist < 1e-4) {
+      dx = min;
+      dy = 0;
+      dz = 0;
+    }
+    const len = Math.hypot(dx, dy, dz) || 1;
+    const nx = dx / len;
+    const ny = dy / len;
+    const nz = dz / len;
+    const gap = min - (dist < 1e-4 ? 0 : dist);
+    this.feet.x += nx * gap;
+    this.feet.y += ny * gap;
+    this.feet.z += nz * gap;
+    const vn = this.velX * nx + this.velY * ny + this.velZ * nz;
+    if (vn < 0) {
+      this.velX -= vn * nx;
+      this.velY -= vn * ny;
+      this.velZ -= vn * nz;
+    }
+    if (this.debugOn && !this.pushedKind.has(kind)) {
+      this.pushedKind.add(kind);
+      console.info(`[push] ${kind} dist=${(dist < 1e-4 ? 0 : dist).toFixed(2)}`);
+    }
   }
 
   /** Prone, head along the look direction. Local +Y is the head; the belly faces downward. */
@@ -638,6 +774,7 @@ export class Game {
     this.bodyBelly.crossVectors(this.bodyRight, this.look);
     this.bodyBasis.makeBasis(this.bodyRight, this.look, this.bodyBelly);
     this.diver.quaternion.setFromRotationMatrix(this.bodyBasis);
+    if (kicking) this.diver.rotateX(Math.sin((this.strokePhase % 1) * Math.PI * 2) * (bursting ? 0.1 : 0.07));
     const back = 0.55;
     this.diver.position.set(
       this.feet.x - this.look.x * back,
@@ -662,17 +799,18 @@ export class Game {
     const kAng = immediate ? 1 : 1 - Math.exp(-2.4 * dt);
     this.camYaw = lerpAngle(this.camYaw, this.viewYaw, kAng);
     this.camPitch += (this.viewPitch - this.camPitch) * kAng;
-    const cp = Math.cos(this.camPitch);
-    const lx = Math.sin(this.camYaw) * cp;
-    const ly = Math.sin(this.camPitch);
-    const lz = Math.cos(this.camYaw) * cp;
-    const dist = BALANCE.followDist;
+    const back = BALANCE.followBack;
+    const side = BALANCE.followSide;
+    const fx = Math.sin(this.camYaw);
+    const fz = Math.cos(this.camYaw);
     const rx = -Math.cos(this.camYaw);
     const rz = Math.sin(this.camYaw);
-    const chestY = this.feet.y + 0.55;
-    const desiredX = this.feet.x - lx * dist + rx * BALANCE.followSide;
-    const desiredZ = this.feet.z - lz * dist + rz * BALANCE.followSide;
-    const desiredY = Math.max(chestY - ly * dist * 0.35 + BALANCE.followLift, terrainHeight(desiredX, desiredZ) + 1.2);
+    const aimY = this.feet.y + BALANCE.followAim;
+    const desiredX = this.feet.x - fx * back + rx * side;
+    const desiredZ = this.feet.z - fz * back + rz * side;
+    let desiredY = aimY + BALANCE.followLift;
+    const floor = terrainHeight(desiredX, desiredZ) + 1.15;
+    if (desiredY < floor) desiredY = floor;
     if (immediate) {
       this.camPos.set(desiredX, desiredY, desiredZ);
     } else {
@@ -687,7 +825,7 @@ export class Game {
       this.camPos.z,
     );
     this.cam.up.set(0, 1, 0);
-    this.cam.lookAt(this.feet.x + lx * 0.35, chestY + ly * 0.35, this.feet.z + lz * 0.35);
+    this.cam.lookAt(this.feet.x + fx * 0.55, aimY, this.feet.z + fz * 0.55);
   }
 
   private syncView(): void {
@@ -724,6 +862,7 @@ export class Game {
     this.shotCd = BALANCE.shotCooldown;
     this.filmLeft -= 1;
     this.flash = 0.85;
+    if (this.life.framing()) this.life.releaseFrame();
     this.audio.shutter();
     const visible = this.diver.visible;
     this.diver.visible = false;
@@ -1212,7 +1351,7 @@ export class Game {
       film: this.filmLeft,
       filmMax: BALANCE.film,
       warnReturn: this.mode === 'dive' && depth > 4 && this.o2 < need * 1.18 && !this.blackout,
-      atSurface: this.mode === 'dive' && depth < BALANCE.surfaceDepth + 0.25,
+      atSurface: this.mode === 'dive' && depth < BALANCE.surfaceUi,
       viewfinder: this.viewfinder,
       mm: focalMm(this.fov),
       focus,
