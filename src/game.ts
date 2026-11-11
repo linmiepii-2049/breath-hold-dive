@@ -262,6 +262,7 @@ export class Game {
     this.burstCd = 0;
     this.paused = false;
     this.needsSteer = false;
+    this.unlockedAt = 0;
     this.viewfinder = false;
     this.shake = 0;
     this.shotCd = 0;
@@ -399,6 +400,18 @@ export class Game {
     if (this.wantJudge && this.mode === 'dive' && (this.pendingShots === 0 || performance.now() - this.wantJudgeAt > 2500)) {
       this.enterJudge();
     }
+    if (
+      this.mode === 'dive' &&
+      !this.wantJudge &&
+      !this.life.framing() &&
+      !document.pointerLockElement &&
+      !this.paused
+    ) {
+      if (this.unlockedAt === 0) this.unlockedAt = performance.now();
+      else if (performance.now() - this.unlockedAt > 280) this.holdForSteer();
+    } else {
+      this.unlockedAt = 0;
+    }
     const diving = this.mode === 'dive' && !this.paused && !this.wantJudge;
     if (diving) this.simDive(dt);
     else if (this.mode === 'breath' && this.breath) this.simBreath(dt);
@@ -484,6 +497,8 @@ export class Game {
       this.o2 = maxOxygen(this.save.lung);
     }
     const atSurface = depthMeters(this.feet.y) < BALANCE.surfaceDepth + 0.2;
+    // Reaching the surface refills oxygen and stays in the dive. The judge card
+    // opens only from E, or after a blackout / forced ascent has held them there.
     if ((this.lockSurface || this.stamina <= 0) && atSurface) {
       this.surfaceHold += dt;
       if (this.surfaceHold > 0.65) this.finishDive();
@@ -595,10 +610,12 @@ export class Game {
     const ly = Math.sin(this.camPitch);
     const lz = Math.cos(this.camYaw) * cp;
     const dist = BALANCE.followDist;
-    const chestY = this.feet.y + 0.7;
-    const desiredX = this.feet.x - lx * dist;
-    const desiredZ = this.feet.z - lz * dist;
-    const desiredY = Math.max(chestY - ly * dist + 0.45, terrainHeight(desiredX, desiredZ) + 1.2);
+    const rx = -Math.cos(this.camYaw);
+    const rz = Math.sin(this.camYaw);
+    const chestY = this.feet.y + 0.55;
+    const desiredX = this.feet.x - lx * dist + rx * BALANCE.followSide;
+    const desiredZ = this.feet.z - lz * dist + rz * BALANCE.followSide;
+    const desiredY = Math.max(chestY - ly * dist * 0.35 + BALANCE.followLift, terrainHeight(desiredX, desiredZ) + 1.2);
     if (immediate) {
       this.camPos.set(desiredX, desiredY, desiredZ);
     } else {
@@ -613,7 +630,7 @@ export class Game {
       this.camPos.z,
     );
     this.cam.up.set(0, 1, 0);
-    this.cam.lookAt(this.feet.x + lx * 2.2, chestY + ly * 2.2, this.feet.z + lz * 2.2);
+    this.cam.lookAt(this.feet.x + lx * 0.35, chestY + ly * 0.35, this.feet.z + lz * 0.35);
   }
 
   private syncView(): void {
@@ -1162,6 +1179,13 @@ export class Game {
   }
 
   private bindInput(): void {
+    window.addEventListener(
+      'keydown',
+      (e) => {
+        if (this.mode === 'dive' && (e.code === 'Space' || e.code === 'Enter')) e.preventDefault();
+      },
+      true,
+    );
     window.addEventListener('keydown', (e) => {
       this.audio.unlock();
       if (e.repeat) return;
@@ -1229,6 +1253,7 @@ export class Game {
   }
 
   private suppressToggleUntil = 0;
+  private unlockedAt = 0;
 
   private holdForSteer(): void {
     if (this.mode !== 'dive' || this.wantJudge) return;

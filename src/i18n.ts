@@ -20,7 +20,7 @@ const STR: Record<string, { zh: string; en: string }> = {
   'btn.next': { zh: '下一张', en: 'Next' },
   'btn.summary': { zh: '看结算', en: 'Summary' },
   'btn.shore': { zh: '回到岸上', en: 'Back to shore' },
-  'btn.resume': { zh: '继续下潜', en: 'Resume' },
+  'btn.resume': { zh: '点击继续转向', en: 'Click to steer' },
   'btn.locked': { zh: '未解锁', en: 'Locked' },
 
   'shore.blurb': {

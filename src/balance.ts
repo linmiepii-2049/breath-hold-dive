@@ -33,20 +33,23 @@ export const BALANCE = {
   /** Passive lift above this depth, none on it, sink below it. */
   neutralDepth: 12,
   /** Upward acceleration at the surface, fading to zero at neutralDepth. */
-  riseAccel: 1.15,
-  /** Downward acceleration once sinkRamp meters past neutral. */
-  sinkAccel: 1.7,
-  sinkRamp: 16,
+  riseAccel: 0.47,
+  /** Downward acceleration once sinkRamp meters past neutral. Full only well below 12 m. */
+  sinkAccel: 0.585,
+  sinkRamp: 24,
   /** Passive float speed near the surface. Matches riseAccel / waterDrag. */
-  terminalRise: 1.25,
-  /** Passive free-fall once the sink is fully on. Matches sinkAccel / waterDrag. */
-  terminalSink: 1.85,
-  /** How fast speed bleeds off in water. Higher glides less. */
-  waterDrag: 0.92,
-  /** Forward acceleration while Space is held, before fins. */
-  kickAccel: 3.15,
-  /** Forward acceleration during the F kick. */
-  sprintAccel: 5.7,
+  terminalRise: 0.72,
+  /** Passive free-fall once the sink is fully on, around 36 m. Matches sinkAccel / waterDrag. */
+  terminalSink: 0.9,
+  /**
+   * How fast speed bleeds off. 0.65 /s is about a 1.1 s half-life, so a kick
+   * glides down before the slow buoyancy drift takes over.
+   */
+  waterDrag: 0.65,
+  /** Forward acceleration while Space is held, before fins. Cruise is about 3.3 m/s. */
+  kickAccel: 2.15,
+  /** Forward acceleration during the F kick. Cruise is about 5.7 m/s. */
+  sprintAccel: 3.7,
   /** Radians per mouse pixel at sensitivity 1. Right decreases yaw; up increases pitch. */
   lookYaw: 0.00115,
   lookPitch: 0.00095,
@@ -73,7 +76,10 @@ export const BALANCE = {
   blackoutFine: 70,
   /** Fraction of non-best photos added to the payout. */
   otherPhotoPay: 0.25,
-  followDist: 11,
+  /** Third-person camera sits beside the diver so the prone body crosses the frame. */
+  followDist: 6.4,
+  followSide: 5.4,
+  followLift: 1.7,
   shotCooldown: 0.45,
   grace: 3.5,
 };

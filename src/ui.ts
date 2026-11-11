@@ -369,7 +369,7 @@ export class GameUI {
         <div class="lbl" style="margin-top:8px">${t('hud.stamina')}</div>
         <div class="bar stamina"><span id="stam"></span></div>
         <div class="warn" id="warn"></div>
-        <button class="primary end" id="end-dive">${t('btn.endDive')}</button>
+        <button type="button" class="primary end" id="end-dive">${t('btn.endDive')}</button>
       </div>
       <div class="legend">
         <div>${t('hud.legend1')}</div>
@@ -393,7 +393,7 @@ export class GameUI {
         <div class="panel">
           <h2>${t('hud.pause')}</h2>
           <p class="dim">${t('hud.pauseHint')}</p>
-          <button class="primary" id="resume">${t('btn.resume')}</button>
+          <button type="button" class="primary" id="resume">${t('btn.resume')}</button>
         </div>
       </div>`;
   }
