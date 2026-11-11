@@ -33,12 +33,12 @@ export const BALANCE = {
   /** Passive lift above this depth, none on it, sink below it. */
   neutralDepth: 12,
   /** Upward acceleration at the surface, fading to zero at neutralDepth. */
-  riseAccel: 0.47,
+  riseAccel: 0.507,
   /** Downward acceleration once sinkRamp meters past neutral. Full only well below 12 m. */
   sinkAccel: 0.585,
   sinkRamp: 24,
   /** Passive float speed near the surface. Matches riseAccel / waterDrag. */
-  terminalRise: 0.72,
+  terminalRise: 0.78,
   /** Passive free-fall once the sink is fully on, around 36 m. Matches sinkAccel / waterDrag. */
   terminalSink: 0.9,
   /**
@@ -120,7 +120,11 @@ export function o2Drain(depth: number, suit: number, efficiency: number, burst: 
 /** Positive lifts the diver. Zero at the neutral depth. Negative is the free-fall. */
 export function buoyancyAccel(depth: number): number {
   const neutral = BALANCE.neutralDepth;
-  if (depth <= neutral) return BALANCE.riseAccel * ((neutral - depth) / neutral);
+  if (depth <= neutral) {
+    const t = (neutral - depth) / neutral;
+    // Full passive rise through the top half of the column, then fade to neutral.
+    return BALANCE.riseAccel * Math.min(1, t / 0.5);
+  }
   const t = Math.min(1, (depth - neutral) / BALANCE.sinkRamp);
   return -BALANCE.sinkAccel * t;
 }

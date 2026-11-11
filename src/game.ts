@@ -62,6 +62,7 @@ interface Bubble {
 interface Toast {
   key: string;
   ttl: number;
+  text?: string;
 }
 
 export class Game {
@@ -180,6 +181,7 @@ export class Game {
     this.audio.setMuted(this.save.muted);
 
     this.renderer = new WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: 'high-performance' });
+    if (!this.renderer.getContext()) throw new Error('Error creating WebGL context.');
     this.renderer.outputColorSpace = SRGBColorSpace;
     this.renderer.toneMapping = ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
@@ -1249,8 +1251,9 @@ export class Game {
   }
 
   private onSim(ev: SimEvent): void {
-    if (ev.baitStart) this.pushToast('toast.bait');
-    if (ev.turtleStart) this.pushToast('toast.turtle');
+    if (ev.baitStart) this.pushMoment('toast.bait', (s) => s.moment === 'baitball');
+    if (ev.turtleStart) this.pushMoment('toast.turtle', (s) => s.moment === 'turtleBreath');
+    if (ev.octopusStart) this.pushMoment('toast.octopus', (s) => s.species === 'octopus');
     if (ev.orcaStart) this.pushToast('toast.orcaNear');
     if (ev.sharkWarn) this.pushToast('toast.sharkNear');
     if (ev.sharkCharge) this.pushToast('toast.sharkCharge');
@@ -1563,9 +1566,32 @@ export class Game {
     }
   }
 
-  private pushToast(key: string): void {
+  private pushToast(key: string, text?: string, ttl = 3.1): void {
     if (this.toasts.some((toast) => toast.key === key)) return;
-    this.toasts.push({ key, ttl: 3.1 });
+    this.toasts.push({ key, ttl, text });
+  }
+
+  /** Where a moment is, relative to the way the diver is looking. */
+  private bearing(x: number, y: number, z: number): string {
+    const dx = x - this.feet.x;
+    const dy = y - (this.feet.y + 1);
+    const dz = z - this.feet.z;
+    let ang = Math.atan2(dx, dz) - this.viewYaw;
+    while (ang > Math.PI) ang -= Math.PI * 2;
+    while (ang < -Math.PI) ang += Math.PI * 2;
+    const sector = ((Math.round(ang / (Math.PI / 4)) % 8) + 8) % 8;
+    const en = this.save.lang === 'en';
+    const dirs = en
+      ? ['ahead', 'ahead right', 'right', 'behind right', 'behind', 'behind left', 'left', 'ahead left']
+      : ['前方', '右前方', '右侧', '右后方', '后方', '左后方', '左侧', '左前方'];
+    const vertical = dy > 1.4 ? (en ? 'above · ' : '上方 · ') : dy < -1.4 ? (en ? 'below · ' : '下方 · ') : '';
+    return vertical + dirs[sector];
+  }
+
+  private pushMoment(key: string, match: (s: { x: number; y: number; z: number; moment: string | null; species: string }) => boolean): void {
+    const at = this.life.snaps.find(match);
+    const text = at ? `${t(key)} · ${this.bearing(at.x, at.y, at.z)}` : undefined;
+    this.pushToast(key, text, 5.8);
   }
 
   private model(): UIModel {
@@ -1616,7 +1642,7 @@ export class Game {
       burstCd: this.burstCd,
       sharkThreat: this.mode === 'dive' && this.sharkThreat,
       sharkCharging: this.mode === 'dive' && this.sharkCharging,
-      toasts: this.toasts.map((toast) => toast.key),
+      toasts: this.toasts.map((toast) => ({ key: toast.key, text: toast.text })),
       flash: this.flash,
       vignette: this.mode === 'dive' ? (this.blackout ? 0.35 : o2frac < 0.34 ? (0.34 - o2frac) / 0.34 : 0) : 0,
       blackout: this.mode === 'dive' && this.blackout ? 0.78 : 0,

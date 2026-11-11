@@ -158,6 +158,11 @@ const STR: Record<string, { zh: string; en: string }> = {
   'toast.done': { zh: '体力耗尽，只能上浮', en: 'No stamina left. You have to surface.' },
   'toast.bait': { zh: '鲨鱼冲进鱼群了', en: 'A shark just hit the school.' },
   'toast.turtle': { zh: '海龟在换气', en: 'The turtle is up for a breath.' },
+  'toast.octopus': { zh: '章鱼在变色', en: 'The octopus is changing colour.' },
+  'webgl.fail': {
+    zh: '你的浏览器无法启动 3D。请换用最新的 Chrome、Edge 或 Firefox，并打开硬件加速。',
+    en: 'This browser could not start 3D. Use a current Chrome, Edge, or Firefox with hardware acceleration turned on.',
+  },
   'toast.orcaNear': { zh: '深处有巨大的影子经过', en: 'A huge shape is passing in the deep.' },
   'toast.shot': { zh: '快门', en: 'Shutter' },
 

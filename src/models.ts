@@ -404,21 +404,21 @@ export function makeDiver(): Group {
   return g;
 }
 
-/** A quiet teal edge that strengthens with depth. The suit stays low-poly and dark. */
+/** A teal edge that is already readable in daylight and stronger in the deep. */
 export function shadeDiver(diver: Group, depth: number): void {
-  const k = Math.max(0, Math.min(1, (depth - 12) / 28));
+  const k = Math.max(0, Math.min(1, (depth - 6) / 30));
   const suit = diver.userData.suit as MeshLambertMaterial;
   const skin = diver.userData.skin as MeshLambertMaterial;
   const finMat = diver.userData.finMat as MeshLambertMaterial;
   const accent = diver.userData.accent as MeshLambertMaterial;
-  suit.emissive.setHex(0x2488a0);
-  suit.emissiveIntensity = 0.06 + k * 1.35;
-  skin.emissive.setHex(0xc48a68);
-  skin.emissiveIntensity = 0.04 + k * 0.4;
-  finMat.emissive.setHex(0x7af6e4);
-  finMat.emissiveIntensity = 0.12 + k * 0.55;
-  accent.emissive.setHex(0xe36a3c);
-  accent.emissiveIntensity = 0.06 + k * 0.35;
+  suit.emissive.setHex(0x3ec4d8);
+  suit.emissiveIntensity = 0.42 + k * 1.7;
+  skin.emissive.setHex(0xd9a07c);
+  skin.emissiveIntensity = 0.16 + k * 0.55;
+  finMat.emissive.setHex(0x9af8ea);
+  finMat.emissiveIntensity = 0.28 + k * 0.7;
+  accent.emissive.setHex(0xff8a55);
+  accent.emissiveIntensity = 0.18 + k * 0.5;
 }
 
 export function tintDiver(diver: Group, suitLevel: number, finLevel: number): void {
