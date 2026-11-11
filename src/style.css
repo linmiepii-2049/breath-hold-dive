@@ -129,10 +129,13 @@ button:hover:not(:disabled) { filter: brightness(1.08); }
   overflow-x: hidden;
   overflow-y: auto;
   min-height: 0;
-  flex: 1 1 auto;
+  flex: 1 1 0;
   touch-action: pan-y;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
+}
+.modal .shop-grid {
+  padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
 }
 .modal .grid { max-height: none; }
 .modal .actions { margin-top: 8px; padding-top: 8px; }
@@ -520,3 +523,28 @@ body.touch .btn-name { margin-left: 6px; font-size: 13px; }
   body.touch .sum .net { font-size: 22px; }
 }
 .rotate-overlay p { margin: 0; max-width: 16em; font-size: 28px; line-height: 1.4; }
+body.touch .steer-zone {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 50%;
+  pointer-events: none;
+  z-index: 4;
+  background: linear-gradient(90deg, rgba(142, 224, 214, 0.16), rgba(142, 224, 214, 0));
+  animation: steer-fade 6s ease forwards;
+}
+body.touch .steer-zone span {
+  position: absolute;
+  left: 12%;
+  top: 46%;
+  max-width: 10em;
+  color: rgba(231, 255, 248, 0.82);
+  font-size: 15px;
+  letter-spacing: 0.08em;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+}
+@keyframes steer-fade {
+  0%, 60% { opacity: 1; }
+  100% { opacity: 0; }
+}

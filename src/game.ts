@@ -8,6 +8,7 @@ import {
   Raycaster,
   MeshBasicMaterial,
   PerspectiveCamera,
+  PointLight,
   Scene,
   SphereGeometry,
   SRGBColorSpace,
@@ -79,6 +80,7 @@ export class Game {
   private cam: PerspectiveCamera;
   private fpCam: PerspectiveCamera;
   private diver: ReturnType<typeof makeDiver>;
+  private fillLight = new PointLight(0xe7fff6, 3.2, 16, 1);
   private shadow: Mesh;
   private shotRts: WebGLRenderTarget[] = [];
   private shotRtBusy: boolean[] = [];
@@ -220,6 +222,7 @@ export class Game {
     this.diver = makeDiver();
     tintDiver(this.diver, this.save.gear.suit, this.save.gear.fins);
     this.scene.add(this.diver);
+    this.scene.add(this.fillLight);
     this.shadow = new Mesh(
       new CircleGeometry(0.7, 14),
       new MeshBasicMaterial({ color: 0x021016, transparent: true, opacity: 0.28, depthWrite: false }),
@@ -622,6 +625,11 @@ export class Game {
     this.audio.shoreWave(dt, this.mode !== 'dive' && this.mode !== 'judge');
 
     const renderCam = this.mode === 'dive' && this.viewfinder ? this.fpCam : this.cam;
+    this.fillLight.position.set(
+      this.feet.x * 0.4 + renderCam.position.x * 0.6,
+      this.feet.y + 1.15,
+      this.feet.z * 0.4 + renderCam.position.z * 0.6,
+    );
     try {
       this.renderer.render(this.scene, renderCam);
     } catch (err) {
@@ -1752,7 +1760,12 @@ export class Game {
       burstCd: this.burstCd,
       sharkThreat: this.mode === 'dive' && this.sharkThreat,
       sharkCharging: this.mode === 'dive' && this.sharkCharging,
-      toasts: this.toasts.map((toast) => ({ key: toast.key, text: toast.text })),
+      toasts: this.toasts
+        .filter((toast) => {
+          if (!this.sharkCharging && !this.sharkThreat) return true;
+          return toast.key === 'toast.sharkCharge' || toast.key === 'toast.sharkNear' || toast.key === 'toast.shark';
+        })
+        .map((toast) => ({ key: toast.key, text: toast.text })),
       flash: this.flash,
       vignette: this.mode === 'dive' ? (this.blackout ? 0.35 : o2frac < 0.34 ? (0.34 - o2frac) / 0.34 : 0) : 0,
       blackout: this.mode === 'dive' && this.blackout ? 0.78 : 0,
@@ -1846,17 +1859,15 @@ export class Game {
     if (this.touch) this.bindTouch();
   }
 
-  /** Right-half drag. Same sign as the mouse: up looks up, right turns right. */
+  /** Left-half drag. Same sign as the mouse: up looks up, right turns right. The id stays put while the other hand uses the buttons. */
   private bindTouch(): void {
-    const onScrollUi = (t: Touch): boolean => {
+    const blocksSteer = (t: Touch): boolean => {
       const el = document.elementFromPoint(t.clientX, t.clientY);
-      return !!el?.closest('.modal, .debug-panel, .dock, .panel');
+      return !!el?.closest('.modal, .debug-panel, .rotate-overlay, .touch-pad, button, a, input, label');
     };
     const steer = (t: Touch): boolean => {
-      if (onScrollUi(t)) return false;
-      const el = document.elementFromPoint(t.clientX, t.clientY);
-      if (el?.closest('button, a, input, label, .rotate-overlay')) return false;
-      return t.clientX >= window.innerWidth * 0.5;
+      if (t.clientX >= window.innerWidth * 0.5) return false;
+      return !blocksSteer(t);
     };
     window.addEventListener(
       'touchstart',
@@ -1883,10 +1894,6 @@ export class Game {
         if (this.steerId == null || this.mode !== 'dive') return;
         for (const t of Array.from(e.changedTouches)) {
           if (t.identifier !== this.steerId) continue;
-          if (onScrollUi(t)) {
-            this.steerId = null;
-            continue;
-          }
           e.preventDefault();
           this.touchDX += t.clientX - this.steerX;
           this.touchDY += t.clientY - this.steerY;

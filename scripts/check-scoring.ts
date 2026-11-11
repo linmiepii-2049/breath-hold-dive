@@ -393,12 +393,14 @@ assert(!headAtSurface(-4), 'an underwater head does not refill');
 
 const entry = terrainHeight(0, 2.4);
 const garden = terrainHeight(7, 18);
+const anemoneLedge = terrainHeight(-6, 13);
 const trench = terrainHeight(20, 70);
 const lane = terrainHeight(6.2, 28);
 const leftShelf = terrainHeight(20, 16);
 const underSpawn = terrainHeight(6.2, 9);
 assert(entry < -3, `entry too shallow ${entry}`);
 assert(garden < -6 && garden > -20, `garden ${garden}`);
+assert(anemoneLedge < -5 && anemoneLedge > -8.2, `anemone ledge ${anemoneLedge}`);
 assert(trench < -28, `trench ${trench}`);
 assert(lane < -18, `offshore lane ${lane}`);
 assert(leftShelf > -14, `left shelf stays shallow ${leftShelf}`);
