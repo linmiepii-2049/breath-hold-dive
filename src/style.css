@@ -140,7 +140,8 @@ button:hover:not(:disabled) { filter: brightness(1.08); }
 .bar.stamina > span { background: #f0c36a; }
 .bar.stamina { height: 5px; }
 .warn { min-height: 1.2em; margin-top: 8px; text-align: center; color: var(--gold); font-size: 14px; }
-.warn kbd {
+.warn kbd,
+.pause kbd {
   display: inline-block;
   min-width: 1.35em;
   margin: 0 0.2em;
