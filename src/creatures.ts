@@ -111,7 +111,7 @@ export class OceanLife {
   private orcaHit = false;
   private orcaTold = false;
   /** Charge aim. `min` is the closest gap so far, kept for the log. */
-  private chargeDir = new Map<Swimmer, { x: number; y: number; z: number; ox: number; oy: number; oz: number; start: number; min: number }>();
+  private chargeDir = new Map<Swimmer, { x: number; y: number; z: number; ox: number; oy: number; oz: number; start: number; min: number; stall: number }>();
   private diverPx = 0;
   private diverPy = 0;
   private diverPz = 0;
@@ -130,6 +130,11 @@ export class OceanLife {
   private debugOcto = false;
   private sharkLog = false;
   private schoolTail: InstancedMesh;
+  private schoolPx = 0;
+  private schoolPy = 0;
+  private schoolPz = 0;
+  private schoolT = 0;
+  private schoolReady = false;
 
   constructor(scene: Scene) {
     this.scene = scene;
@@ -966,6 +971,7 @@ export class OceanLife {
       oz: s.z,
       start: dist,
       min: dist,
+      stall: 0,
     });
     this.setShark(s, 'charge', dist, 12);
   }
@@ -1015,34 +1021,40 @@ export class OceanLife {
       return;
     }
     if (s.state === 'charge') {
-      // 2.5 m/s homes on a diver who sinks, rises, or drifts, until contact.
-      // A sustained sprint is faster than that and the shark breaks off.
-      // A ridge that lifts the shark, or one frame of a wall push, does not.
+      // Horizontal speed stays full even when the floor throws away the vertical
+      // part of a 3D step. A rising diver is still closed on in a few seconds.
+      // If the gap stops shrinking, the charge ends and the cue comes down.
       const aim = this.chargeDir.get(s);
-      const speed = 2.5;
+      const speed = 3.6;
       const dx = diver.x - s.x;
       const dy = diver.y - s.y;
       const dz = diver.z - s.z;
-      const len = Math.hypot(dx, dy, dz) || 1;
+      const horiz = Math.hypot(dx, dz) || 1;
+      s.x += (dx / horiz) * speed * dt;
+      s.z += (dz / horiz) * speed * dt;
+      s.y += Math.sign(dy) * Math.min(speed * dt, Math.abs(dy));
+      s.yaw = Math.atan2(dx, dz);
       if (aim) {
-        aim.x = dx / len;
-        aim.y = dy / len;
-        aim.z = dz / len;
-        s.x += aim.x * speed * dt;
-        s.y += aim.y * speed * dt;
-        s.z += aim.z * speed * dt;
-        s.yaw = Math.atan2(aim.x, aim.z);
+        aim.x = dx / horiz;
+        aim.y = Math.sign(dy);
+        aim.z = dz / horiz;
       }
       const floor = terrainHeight(s.x, s.z);
       if (s.y < floor + 1.15) s.y = floor + 1.15;
       if (s.y > -0.85) s.y = -0.85;
       s.timer -= dt;
       const now = Math.hypot(s.x - diver.x, s.y - diver.y, s.z - diver.z);
-      if (aim) aim.min = Math.min(aim.min, now);
+      if (aim) {
+        if (now < aim.min - 0.04) {
+          aim.min = now;
+          aim.stall = 0;
+        } else aim.stall += dt;
+      }
+      const stalled = !!aim && aim.stall > 1.5 && now > 2.2;
       if (now < 2.2) {
         this.setShark(s, 'retreat', now, 4.5);
         out.hit = out.hit ?? 'shark';
-      } else if (this.diverSprinting() || s.timer <= 0 || now > 18) {
+      } else if (this.diverSprinting() || s.timer <= 0 || now > 18 || stalled) {
         this.setShark(s, 'patrol', now, 12);
       }
       return;
@@ -1221,8 +1233,20 @@ export class OceanLife {
     sy /= n;
     sz /= n;
     let spread = 0;
-    for (const b of this.boids) spread += Math.hypot(b.x - sx, b.y - sy, b.z - sz);
+    let member = 0;
+    for (const b of this.boids) {
+      spread += Math.hypot(b.x - sx, b.y - sy, b.z - sz);
+      member = Math.max(member, Math.hypot(b.vx, b.vy, b.vz));
+    }
     spread /= n;
+    const dt = Math.max(0.001, this.t - this.schoolT);
+    const centroid = this.schoolReady ? Math.hypot(sx - this.schoolPx, sy - this.schoolPy, sz - this.schoolPz) / dt : 0;
+    this.schoolPx = sx;
+    this.schoolPy = sy;
+    this.schoolPz = sz;
+    this.schoolT = this.t;
+    this.schoolReady = true;
+    const schoolMoving = this.debugLock <= 0 && (centroid > 0.28 || member > 0.28);
     this.snaps.push({
       species: 'sardine',
       rarity: 14,
@@ -1233,10 +1257,10 @@ export class OceanLife {
       optimal: 8.5,
       moment: scatter ? 'baitball' : null,
       dangerous: false,
-      acting: true,
+      acting: schoolMoving,
     });
     for (const b of this.boids) {
-      const moving = Math.hypot(b.vx, b.vy, b.vz) > 0.35;
+      const own = Math.hypot(b.vx, b.vy, b.vz) > 0.28;
       this.snaps.push({
         species: 'sardine',
         rarity: 10,
@@ -1247,7 +1271,7 @@ export class OceanLife {
         optimal: 2.1,
         moment: scatter ? 'baitball' : null,
         dangerous: false,
-        acting: moving,
+        acting: this.debugLock <= 0 && (schoolMoving || own),
       });
     }
     for (const s of this.swimmers) {

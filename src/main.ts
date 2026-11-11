@@ -32,7 +32,19 @@ function isWebglError(err: unknown): boolean {
   return /webgl|gl context/i.test(msg);
 }
 
-try {
+function webglSupported(): boolean {
+  try {
+    const probe = document.createElement('canvas');
+    const gl = probe.getContext('webgl2') || probe.getContext('webgl');
+    return !!gl;
+  } catch {
+    return false;
+  }
+}
+
+if (!webglSupported()) {
+  showWebglFail();
+} else try {
   const game = new Game(canvas, ui);
   if (import.meta.env.DEV) {
     (window as unknown as { __bh: Game }).__bh = game;

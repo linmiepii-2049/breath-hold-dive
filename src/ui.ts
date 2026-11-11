@@ -315,11 +315,13 @@ export class GameUI {
     const moments = MOMENTS.map((id) => `<button data-debug="${id}">${t(`mo.${id}`)}</button>`).join('');
     return `<details class="debug-panel${floating ? ' dive-debug' : ''}">
       <summary>${t('debug.title')}</summary>
-      <p class="dim">${t('debug.hint')}</p>
-      <div class="debug-btns">
-        <button data-debug="air">${t('debug.air')}</button>
-        <button data-debug="warn">${t('debug.warn')}</button>
-        ${species}${moments}
+      <div class="debug-scroll">
+        <p class="dim">${t('debug.hint')}</p>
+        <div class="debug-btns">
+          <button data-debug="air">${t('debug.air')}</button>
+          <button data-debug="warn">${t('debug.warn')}</button>
+          ${species}${moments}
+        </div>
       </div>
     </details>`;
   }
