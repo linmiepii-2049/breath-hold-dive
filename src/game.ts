@@ -103,6 +103,12 @@ export class Game {
   private pad: BreathPhase | null = null;
   private holdPointer = false;
   private kickQueued = false;
+  private spaceDown = false;
+  private spaceHold = 0;
+  private strokeWait = 0;
+  private strokePhase = 0;
+  private sprintLatched = false;
+  private sharkThreat = false;
   private needsSteer = false;
   private relockUntil = 0;
 
@@ -260,6 +266,12 @@ export class Game {
     this.invuln = BALANCE.grace;
     this.burstT = 0;
     this.burstCd = 0;
+    this.spaceDown = false;
+    this.spaceHold = 0;
+    this.strokeWait = 0;
+    this.strokePhase = 0;
+    this.sprintLatched = false;
+    this.sharkThreat = false;
     this.paused = false;
     this.needsSteer = false;
     this.unlockedAt = 0;
@@ -538,6 +550,23 @@ export class Game {
     out.set(Math.sin(yaw) * cp, Math.sin(pitch), Math.cos(yaw) * cp);
   }
 
+  private addLook(amount: number): void {
+    this.velX += this.look.x * amount;
+    this.velY += this.look.y * amount;
+    this.velZ += this.look.z * amount;
+  }
+
+  private alongLook(): number {
+    return this.velX * this.look.x + this.velY * this.look.y + this.velZ * this.look.z;
+  }
+
+  /** Pull the along-look speed toward `target`. Release leaves only waterDrag. */
+  private catchLook(target: number, rate: number, dt: number, gate = 1): void {
+    if (gate <= 0) return;
+    const fix = (target - this.alongLook()) * (1 - Math.exp(-rate * dt)) * gate;
+    this.addLook(fix);
+  }
+
   private moveDiver(dt: number, bursting: boolean): void {
     if (this.life.framing()) {
       this.velX = 0;
@@ -547,14 +576,42 @@ export class Game {
     }
     this.fillLook(this.viewYaw, this.viewPitch, this.look);
     const fins = 1 + BALANCE.finsSpeed * this.save.gear.fins;
-    let thrust = 0;
-    if (bursting) thrust = BALANCE.sprintAccel;
-    else if (this.keys.has('Space')) thrust = BALANCE.kickAccel;
-    thrust *= fins;
-    if (this.lockSurface) thrust *= 0.35;
-    this.velX += this.look.x * thrust * dt;
-    this.velY += this.look.y * thrust * dt;
-    this.velZ += this.look.z * thrust * dt;
+    const space = this.keys.has('Space') && !this.lockSurface;
+    const pressed = space && !this.spaceDown;
+    this.spaceDown = space;
+    if (bursting) {
+      const target = BALANCE.sprintSpeed * fins;
+      if (!this.sprintLatched) {
+        this.sprintLatched = true;
+        this.addLook(target - this.alongLook());
+        this.strokePhase = 0;
+      } else {
+        this.catchLook(target, 12, dt);
+      }
+      this.strokePhase += dt / 0.32;
+    } else {
+      this.sprintLatched = false;
+      if (space) {
+        if (pressed) {
+          this.spaceHold = 0;
+          this.strokeWait = 0;
+        }
+        this.spaceHold += dt;
+        if (this.strokeWait <= 0) {
+          this.addLook((pressed ? BALANCE.strokeImpulse : BALANCE.strokePulse) * fins);
+          this.strokeWait = BALANCE.strokePeriod;
+          this.strokePhase = 0;
+        } else {
+          this.strokeWait -= dt;
+          this.strokePhase += dt / BALANCE.strokePeriod;
+        }
+        const gate = clamp((this.spaceHold - BALANCE.cruiseCatchDelay) / BALANCE.cruiseCatchBlend, 0, 1);
+        this.catchLook(BALANCE.cruiseSpeed * fins, BALANCE.cruiseCatch, dt, gate);
+      } else {
+        this.spaceHold = 0;
+        this.strokePhase += dt * 0.35;
+      }
+    }
     const depth = depthMeters(this.feet.y);
     this.velY += buoyancyAccel(depth) * dt;
     if (this.forcedT > 0 || this.lockSurface) this.velY = Math.max(this.velY, 3.3);
@@ -589,7 +646,7 @@ export class Game {
     );
     this.diver.userData.swimming = true;
     this.diver.visible = !this.viewfinder;
-    animateDiver(this.diver, this.time, kicking, bursting);
+    animateDiver(this.diver, this.time, kicking, bursting, this.strokePhase);
   }
 
   private follow(dt: number): void {
@@ -811,6 +868,8 @@ export class Game {
     if (ev.baitStart) this.pushToast('toast.bait');
     if (ev.turtleStart) this.pushToast('toast.turtle');
     if (ev.orcaStart) this.pushToast('toast.orcaNear');
+    if (ev.sharkWarn) this.pushToast('toast.sharkNear');
+    this.sharkThreat = ev.sharkThreat;
     if (!ev.hit || this.invuln > 0 || this.blackout) return;
     this.invuln = 2.7;
     this.stamina = Math.max(0, this.stamina - BALANCE.hitStamina);
@@ -1126,7 +1185,7 @@ export class Game {
       if (preview.momentId && preview.moment >= 20) focus += ` · ${t(`mo.${preview.momentId}`)}`;
     }
     const fins = 1 + BALANCE.finsSpeed * this.save.gear.fins;
-    const climb = Math.max(0.65, (BALANCE.kickAccel * fins) / BALANCE.waterDrag + buoyancyAccel(depth));
+    const climb = Math.max(0.65, BALANCE.cruiseSpeed * fins + buoyancyAccel(depth));
     const mid = o2Drain(depth * 0.55, this.save.gear.suit, this.save.efficiency, false);
     const need = Math.max(0, depth - BALANCE.surfaceDepth) / climb * mid;
     const o2frac = this.o2 / maxO2;
@@ -1160,6 +1219,9 @@ export class Game {
       paused: this.paused,
       lookSens: this.save.lookSens,
       bursting: this.burstT > 0,
+      burstLeft: this.burstT,
+      burstCd: this.burstCd,
+      sharkThreat: this.mode === 'dive' && this.sharkThreat,
       toasts: this.toasts.map((toast) => toast.key),
       flash: this.flash,
       vignette: this.mode === 'dive' ? (this.blackout ? 0.35 : o2frac < 0.34 ? (0.34 - o2frac) / 0.34 : 0) : 0,

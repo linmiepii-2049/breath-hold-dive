@@ -176,15 +176,25 @@ assert(BALANCE.terminalRise >= 0.6 && BALANCE.terminalRise <= 0.8, 'rise termina
 assert(BALANCE.terminalSink >= 0.8 && BALANCE.terminalSink <= 1, 'sink terminal band');
 assert(Math.abs(BALANCE.riseAccel / BALANCE.waterDrag - BALANCE.terminalRise) < 0.02, 'rise terminal');
 assert(Math.abs(BALANCE.sinkAccel / BALANCE.waterDrag - BALANCE.terminalSink) < 0.02, 'sink terminal');
+assert(BALANCE.waterDrag === 0.65, 'glide drag stays');
+assert(BALANCE.cruiseSpeed >= 2 && BALANCE.cruiseSpeed <= 2.5, 'cruise band');
+assert(Math.abs(BALANCE.sprintSpeed / BALANCE.cruiseSpeed - 1.7) < 0.06, 'sprint is about 1.7x');
+assert(BALANCE.strokePeriod >= 0.4 && BALANCE.strokePeriod <= 0.5, 'stroke cycle');
+assert(BALANCE.burstTime >= 0.95 && BALANCE.burstTime <= 1.05, 'sprint lasts about a second');
+assert(BALANCE.strokeImpulse > 0.7 && BALANCE.strokeImpulse < 1.2, 'a tap is an impulse');
 assert(headAtSurface(-1.88), 'a head at the surface can breathe');
 assert(!headAtSurface(-4), 'an underwater head does not refill');
 
 const entry = terrainHeight(0, 2.4);
 const garden = terrainHeight(7, 18);
 const trench = terrainHeight(20, 70);
+const lane = terrainHeight(6.2, 28);
+const leftShelf = terrainHeight(20, 16);
 assert(entry < -3, `entry too shallow ${entry}`);
 assert(garden < -6 && garden > -20, `garden ${garden}`);
 assert(trench < -28, `trench ${trench}`);
+assert(lane < -18, `offshore lane ${lane}`);
+assert(leftShelf > -14, `left shelf stays shallow ${leftShelf}`);
 assert(Math.abs(depthMeters(-1.88) - 0.98) < 0.02, 'surface depth');
 
 console.log('scoring ok', { turtle: turtle.total, moment: turtleMoment.total, orca: orca.total, clown: clown.total, trench, garden });

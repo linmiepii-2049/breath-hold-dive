@@ -11,6 +11,9 @@ export function terrainHeight(x: number, z: number): number {
 
   let depth = 8 + 11 * smoothstep(4, 50, z);
   depth += 22 * smoothstep(38, 76, z) * smoothstep(-4, 22, x);
+  // Lane straight off the spawn (x ≈ 6, heading +Z). The shelf to the left stays shallow.
+  const lane = smoothstep(10, 22, z) * Math.exp(-((x - 6.2) * (x - 6.2)) / (2 * 9 * 9));
+  depth += 9 * lane;
   let y = -depth + dunes;
 
   if (z < 4) {

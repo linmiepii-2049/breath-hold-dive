@@ -147,9 +147,11 @@ button:hover:not(:disabled) { filter: brightness(1.08); }
 }
 .meter .pin { position: absolute; left: -5px; width: 18px; height: 2px; background: white; }
 .burst {
-  display: none; margin-top: 6px; color: var(--accent); letter-spacing: 0.14em; font-size: 12px;
+  display: none; margin-top: 6px; color: var(--accent); letter-spacing: 0.14em; font-size: 13px;
+  font-variant-numeric: tabular-nums;
 }
 .burst.on { display: block; }
+.burst.cd { color: #f0c36a; }
 
 .vf { display: none; position: absolute; inset: 0; }
 .vf.on { display: block; }
