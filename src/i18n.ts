@@ -126,7 +126,7 @@ const STR: Record<string, { zh: string; en: string }> = {
   'sp.shark': { zh: '鲨鱼', en: 'Shark' },
   'sp.orca': { zh: '虎鲸', en: 'Orca' },
   'hint.sardine': { zh: '浅中层成群游动，偶尔会收成鱼球。', en: 'Schools in the upper reef, and sometimes balls up tight.' },
-  'hint.clownfish': { zh: '守着航道左侧约六米的海葵。', en: 'Stays by the anemone on the left ledge, about six metres down.' },
+  'hint.clownfish': { zh: '航道左侧浅台，比你低一点，一直围着海葵转。', en: 'On the left ledge, a little below you, circling the anemone.' },
   'hint.parrotfish': { zh: '在珊瑚上慢慢啃。', en: 'Cruises the coral, nibbling as it goes.' },
   'hint.turtle': { zh: '礁体间缓游，过一阵会浮到水面换气。', en: 'Glides the reef, then surfaces for a breath.' },
   'hint.manta': { zh: '中层画着大圈滑翔。', en: 'Glides wide loops in midwater.' },
@@ -166,7 +166,7 @@ const STR: Record<string, { zh: string; en: string }> = {
   'hud.pauseSteerTouch': { zh: '左半边滑动继续转向。', en: 'Drag the left half to look again.' },
 
   'toast.descend': { zh: '正前方外海更深。看向下方，Space 踢下去。', en: 'Open water ahead is deeper. Look down and kick.' },
-  'toast.descendTouch': { zh: '正前方外海更深。左半边滑动转向，右手按住踢水潜下去。', en: 'Open water ahead is deeper. Drag the left half to look, and hold Kick with your right hand.' },
+  'toast.descendTouch': { zh: '看向下方，右手按住踢水。', en: 'Look down. Right hand holds Kick.' },
   'toast.debug': { zh: '已对准。左键拍摄，右键或 Esc 退出取景。', en: 'Lined up. Left click shoots. Right click or Esc leaves the viewfinder.' },
   'toast.debugTouch': { zh: '已对准。点快门拍摄，再点相机退出取景。', en: 'Lined up. Tap Shutter. Tap Camera to leave the viewfinder.' },
   'debug.title': { zh: '调试', en: 'Debug' },

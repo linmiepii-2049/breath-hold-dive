@@ -18,9 +18,10 @@ export function terrainHeight(x: number, z: number): number {
   // Lane straight off the spawn (x ≈ 6, heading +Z). The shelf to the left stays shallow.
   const lane = smoothstep(10, 22, z) * Math.exp(-((x - 6.2) * (x - 6.2)) / (2 * 9 * 9));
   depth += 9 * lane;
-  // Anemone ledge, left of the lane, held around 6 m so a short descent can frame it.
-  const ledge = Math.exp(-((x + 6) * (x + 6)) / (2 * 4.2 * 4.2) - ((z - 13) * (z - 13)) / (2 * 3.4 * 3.4));
-  depth -= 4.6 * ledge;
+  // Anemone shelf, just left of the lane. The near lip is where a 6–7 m swim arrives;
+  // the nest itself sits a little deeper so the fish are below a level gaze.
+  const ledge = Math.exp(-((x + 3) * (x + 3)) / (2 * 5.2 * 5.2) - ((z - 15) * (z - 15)) / (2 * 4.2 * 4.2));
+  depth -= 6.4 * ledge;
   // The shelf under the spawn is only ~8 m. Open a drop in front of it so a
   // straight descent has water under the diver, then fade it out before the garden.
   const bowl = smoothstep(3.5, 10, z) * (1 - smoothstep(13.5, 17.2, z));

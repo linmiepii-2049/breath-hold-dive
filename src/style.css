@@ -270,7 +270,7 @@ button:hover:not(:disabled) { filter: brightness(1.08); }
   padding: 6px 12px; font-size: 14px;
 }
 #vignette, #blackout, #flash { position: absolute; inset: 0; pointer-events: none; opacity: 0; }
-#vignette { background: radial-gradient(circle at center, transparent 35%, rgba(120, 0, 20, 0.55) 100%); }
+#vignette { background: radial-gradient(circle at center, transparent 46%, rgba(120, 0, 20, 0.28) 100%); }
 #blackout { background: #010308; }
 #flash { background: white; }
 
@@ -534,14 +534,20 @@ body.touch .steer-zone {
   background: linear-gradient(90deg, rgba(142, 224, 214, 0.16), rgba(142, 224, 214, 0));
   animation: steer-fade 6s ease forwards;
 }
+body.touch .toasts {
+  top: calc(8px + env(safe-area-inset-top, 0px));
+  width: min(260px, calc(100vw - 210px));
+}
+body.touch .toast { font-size: 13px; line-height: 1.35; }
 body.touch .steer-zone span {
-  position: absolute;
-  left: 12%;
-  top: 46%;
-  max-width: 10em;
+  position: fixed;
+  left: 50%;
+  top: calc(44px + env(safe-area-inset-top, 0px));
+  transform: translateX(-50%);
+  white-space: nowrap;
   color: rgba(231, 255, 248, 0.82);
-  font-size: 15px;
-  letter-spacing: 0.08em;
+  font-size: 14px;
+  letter-spacing: 0.06em;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
 }
 @keyframes steer-fade {
