@@ -2,6 +2,7 @@ import {
   ACESFilmicToneMapping,
   CircleGeometry,
   FogExp2,
+  Matrix4,
   Mesh,
   Object3D,
   Raycaster,
@@ -17,11 +18,11 @@ import {
 import { AudioBus } from './audio';
 import {
   BALANCE,
+  buoyancyAccel,
   focalMm,
+  headAtSurface,
   maxOxygen,
   o2Drain,
-  swimSpeed,
-  verticalSpeed,
 } from './balance';
 import { OceanLife, type SimEvent } from './creatures';
 import { setLang, t } from './i18n';
@@ -102,16 +103,22 @@ export class Game {
   private pad: BreathPhase | null = null;
   private holdPointer = false;
   private kickQueued = false;
-  private lastW = 0;
+  private needsSteer = false;
+  private relockUntil = 0;
 
   private feet = new Vector3(1.4, 1, -3);
   private camPos = new Vector3();
   private velX = 0;
+  private velY = 0;
   private velZ = 0;
-  private diverYaw = 0.4;
   private camYaw = 0.4;
+  private camPitch = -0.18;
   private viewYaw = 0;
-  private viewPitch = -0.28;
+  private viewPitch = -0.18;
+  private look = new Vector3();
+  private bodyRight = new Vector3();
+  private bodyBelly = new Vector3();
+  private bodyBasis = new Matrix4();
   private fov = 48;
   private viewfinder = false;
 
@@ -206,7 +213,16 @@ export class Game {
       buy: (id) => this.buy(id),
       endDive: () => this.finishDive(),
       resume: () => {
-        this.paused = false;
+        if (this.mode !== 'dive') {
+          this.paused = false;
+          return;
+        }
+        const lock = this.canvas.requestPointerLock();
+        void Promise.resolve(lock).catch(() => {});
+      },
+      sens: (value) => {
+        this.save.lookSens = clamp(value, 0.45, 2.1);
+        writeSave(this.save);
       },
       submit: () => this.submit(),
       nextCard: () => this.nextCard(),
@@ -245,6 +261,7 @@ export class Game {
     this.burstT = 0;
     this.burstCd = 0;
     this.paused = false;
+    this.needsSteer = false;
     this.viewfinder = false;
     this.shake = 0;
     this.shotCd = 0;
@@ -254,42 +271,84 @@ export class Game {
     const range = BALANCE.lensFov[this.save.gear.lens];
     this.fov = (range[0] + range[1]) / 2;
     this.feet.set(6.2, -3.8, 9);
-    this.diverYaw = 0.15;
+    this.viewYaw = 0.15;
+    this.viewPitch = -0.18;
     this.camYaw = 0.15;
+    this.camPitch = -0.18;
     this.velX = 0;
+    this.velY = 0;
     this.velZ = 0;
     this.life.reset();
+    this.poseDiver(false, false);
     this.snapFollow();
     this.emitBubbles(this.feet.x, this.feet.y + 1.2, this.feet.z, 8);
     this.audio.bubbles();
     this.pushToast('toast.descend');
+    const lock = this.canvas.requestPointerLock();
+    void Promise.resolve(lock).catch(() => {
+      if (this.life.framing() || this.mode !== 'dive' || this.wantJudge) return;
+      if (!document.pointerLockElement) this.holdForSteer();
+    });
   }
 
   /** Dev-only aiming aid used by the playtest. Not wired to the UI. */
-  debugTeleport(x: number, y: number, z: number, yaw: number): void {
+  debugTeleport(x: number, y: number, z: number, yaw: number, pitch?: number, o2?: number): void {
     this.feet.set(x, y, z);
-    this.diverYaw = yaw;
+    this.viewYaw = yaw;
     this.camYaw = yaw;
+    this.velX = 0;
+    this.velY = 0;
+    this.velZ = 0;
+    if (pitch !== undefined) {
+      this.viewPitch = pitch;
+      this.camPitch = pitch;
+    }
+    if (o2 !== undefined) this.o2 = o2;
+    this.paused = false;
+    this.needsSteer = false;
+    this.poseDiver(false, false);
     this.snapFollow();
   }
 
   debugAim(yaw: number, pitch: number, fov: number): void {
     this.viewfinder = true;
     this.viewYaw = yaw;
+    this.camYaw = yaw;
     this.viewPitch = pitch;
+    this.camPitch = pitch;
     this.fov = fov;
     this.syncView();
   }
 
-  debugState(): { yaw: number; camYaw: number; viewfinder: boolean; fov: number; film: number; x: number; z: number } {
+  debugState(): {
+    yaw: number;
+    camYaw: number;
+    pitch: number;
+    camPitch: number;
+    viewfinder: boolean;
+    fov: number;
+    film: number;
+    x: number;
+    y: number;
+    z: number;
+    o2: number;
+    vy: number;
+    paused: boolean;
+  } {
     return {
-      yaw: this.diverYaw,
+      yaw: this.viewYaw,
       camYaw: this.camYaw,
+      pitch: this.viewPitch,
+      camPitch: this.camPitch,
       viewfinder: this.viewfinder,
       fov: this.fov,
       film: this.filmLeft,
       x: this.feet.x,
+      y: this.feet.y,
       z: this.feet.z,
+      o2: this.o2,
+      vy: this.velY,
+      paused: this.paused,
     };
   }
 
@@ -352,8 +411,10 @@ export class Game {
       if (diving) this.onSim(ev);
       this.updateBubbles(dt);
       if (this.mode === 'dive') this.diver.visible = !this.viewfinder;
-      if (diving && this.viewfinder) this.syncView();
-      else if (this.mode === 'dive') this.follow(dt);
+      if (diving && this.viewfinder) {
+        this.syncView();
+        this.snapFollow();
+      } else if (this.mode === 'dive') this.follow(dt);
       else if (this.mode !== 'judge') {
         this.shoreCamera(dt);
         this.placeDiverShore();
@@ -417,7 +478,11 @@ export class Game {
       this.pushToast('toast.blackout');
     }
 
+    this.applyLook();
     this.moveDiver(dt, bursting);
+    if (headAtSurface(this.feet.y) && !this.lockSurface && !this.blackout) {
+      this.o2 = maxOxygen(this.save.lung);
+    }
     const atSurface = depthMeters(this.feet.y) < BALANCE.surfaceDepth + 0.2;
     if ((this.lockSurface || this.stamina <= 0) && atSurface) {
       this.surfaceHold += dt;
@@ -427,9 +492,10 @@ export class Game {
     }
     if (atSurface && this.just.has('KeyE')) this.finishDive();
 
-    const swim = Math.hypot(this.velX, this.velZ);
-    if (bursting || this.keys.has('Space')) this.emitBubbles(this.feet.x, this.feet.y + 1.4, this.feet.z, 1);
-    else if (swim > 1 && Math.random() < dt * 4) this.emitBubbles(this.feet.x, this.feet.y + 1.2, this.feet.z, 1);
+    const swim = Math.hypot(this.velX, this.velY, this.velZ);
+    const kicking = this.keys.has('Space') || bursting;
+    if (kicking) this.emitBubbles(this.feet.x, this.feet.y + 0.4, this.feet.z, 1);
+    else if (swim > 1 && Math.random() < dt * 4) this.emitBubbles(this.feet.x, this.feet.y + 0.3, this.feet.z, 1);
 
     for (const s of this.life.snaps) {
       if (s.moment === 'turtleBreath' && s.species === 'turtle' && Math.random() < dt * 5) {
@@ -437,113 +503,139 @@ export class Game {
       }
     }
 
-    this.diver.position.copy(this.feet);
-    this.diver.rotation.y = this.viewfinder ? this.viewYaw : this.diverYaw;
-    this.diver.visible = !this.viewfinder;
-    animateDiver(this.diver, this.time, swim, bursting);
+    this.poseDiver(kicking, bursting);
     this.placeShadow();
   }
 
+  /** Mouse up looks up. Mouse right turns right. Same with the viewfinder open or closed. */
+  private applyLook(): void {
+    if (!document.pointerLockElement) return;
+    const sens = this.save.lookSens;
+    const lookX = clamp(this.mouseDX, -80, 80);
+    const lookY = clamp(this.mouseDY, -60, 60);
+    this.viewYaw -= lookX * BALANCE.lookYaw * sens;
+    this.viewPitch -= lookY * BALANCE.lookPitch * sens;
+    this.viewPitch = clamp(this.viewPitch, -BALANCE.pitchLimit, BALANCE.pitchLimit);
+  }
+
+  private fillLook(yaw: number, pitch: number, out: Vector3): void {
+    const cp = Math.cos(pitch);
+    out.set(Math.sin(yaw) * cp, Math.sin(pitch), Math.cos(yaw) * cp);
+  }
+
   private moveDiver(dt: number, bursting: boolean): void {
-    let ix = 0;
-    let iz = 0;
-    if (this.viewfinder) {
-      if (this.keys.has('KeyA')) ix -= 1;
-      if (this.keys.has('KeyD')) ix += 1;
-    } else {
-      let turn = 0;
-      if (this.keys.has('KeyA')) turn -= 1;
-      if (this.keys.has('KeyD')) turn += 1;
-      // +yaw swings the nose toward +X, which is screen-left while looking down +Z.
-      this.diverYaw -= turn * BALANCE.turnRate * dt;
+    if (this.life.framing()) {
+      this.velX = 0;
+      this.velY = 0;
+      this.velZ = 0;
+      return;
     }
-    if (this.keys.has('KeyW')) iz += 1;
-    if (this.keys.has('KeyS')) iz -= 1;
-    const len = Math.hypot(ix, iz);
-    if (len > 0) {
-      ix /= len;
-      iz /= len;
-    }
-    const yaw = this.viewfinder ? this.viewYaw : this.diverYaw;
-    const fx = Math.sin(yaw);
-    const fz = Math.cos(yaw);
-    const rx = -Math.cos(yaw);
-    const rz = Math.sin(yaw);
-    let wx = fx * iz + rx * ix;
-    let wz = fz * iz + rz * ix;
-    if (this.lockSurface) {
-      wx *= 0.35;
-      wz *= 0.35;
-    }
-    const speed = swimSpeed(this.save.gear.fins, bursting);
-    const blend = 1 - Math.exp(-7 * dt);
-    this.velX += (wx * speed - this.velX) * blend;
-    this.velZ += (wz * speed - this.velZ) * blend;
+    this.fillLook(this.viewYaw, this.viewPitch, this.look);
+    const fins = 1 + BALANCE.finsSpeed * this.save.gear.fins;
+    let thrust = 0;
+    if (bursting) thrust = BALANCE.sprintAccel;
+    else if (this.keys.has('Space')) thrust = BALANCE.kickAccel;
+    thrust *= fins;
+    if (this.lockSurface) thrust *= 0.35;
+    this.velX += this.look.x * thrust * dt;
+    this.velY += this.look.y * thrust * dt;
+    this.velZ += this.look.z * thrust * dt;
+    const depth = depthMeters(this.feet.y);
+    this.velY += buoyancyAccel(depth) * dt;
+    if (this.forcedT > 0 || this.lockSurface) this.velY = Math.max(this.velY, 3.3);
+    const drag = Math.exp(-BALANCE.waterDrag * dt);
+    this.velX *= drag;
+    this.velY *= drag;
+    this.velZ *= drag;
 
-    let vy = 0;
-    const vSpeed = verticalSpeed(this.save.gear.fins);
-    if (this.keys.has('Space')) vy += vSpeed;
-    if (this.keys.has('ShiftLeft') || this.keys.has('ShiftRight')) vy -= vSpeed;
-    if (this.forcedT > 0 || this.lockSurface) vy = Math.max(vy, 3.3);
-
-    this.feet.x += this.velX * dt;
-    this.feet.y += vy * dt;
-    this.feet.z += this.velZ * dt;
-    const clamped = clampDiver(this.feet.x, this.feet.y, this.feet.z);
+    const nextX = this.feet.x + this.velX * dt;
+    const nextY = this.feet.y + this.velY * dt;
+    const nextZ = this.feet.z + this.velZ * dt;
+    const clamped = clampDiver(nextX, nextY, nextZ);
+    if (clamped.y > nextY + 0.02 && this.velY < 0) this.velY = 0;
+    if (clamped.y < nextY - 0.02 && this.velY > 0) this.velY = 0;
     this.feet.set(clamped.x, clamped.y, clamped.z);
+  }
 
-    if (this.viewfinder) this.diverYaw = this.viewYaw;
+  /** Prone, head along the look direction. Local +Y is the head; the belly faces downward. */
+  private poseDiver(kicking: boolean, bursting: boolean): void {
+    this.fillLook(this.viewYaw, this.viewPitch, this.look);
+    const flat = Math.hypot(this.look.x, this.look.z);
+    if (flat < 1e-4) this.bodyRight.set(-Math.cos(this.viewYaw), 0, Math.sin(this.viewYaw));
+    else this.bodyRight.set(this.look.z / flat, 0, -this.look.x / flat);
+    this.bodyBelly.crossVectors(this.bodyRight, this.look);
+    this.bodyBasis.makeBasis(this.bodyRight, this.look, this.bodyBelly);
+    this.diver.quaternion.setFromRotationMatrix(this.bodyBasis);
+    const back = 0.55;
+    this.diver.position.set(
+      this.feet.x - this.look.x * back,
+      this.feet.y + 0.42 - this.look.y * back,
+      this.feet.z - this.look.z * back,
+    );
+    this.diver.userData.swimming = true;
+    this.diver.visible = !this.viewfinder;
+    animateDiver(this.diver, this.time, kicking, bursting);
   }
 
   private follow(dt: number): void {
-    this.camYaw = lerpAngle(this.camYaw, this.diverYaw, 1 - Math.exp(-2.2 * dt));
-    const dist = BALANCE.followDist;
-    const fx = Math.sin(this.camYaw);
-    const fz = Math.cos(this.camYaw);
-    const desiredX = this.feet.x - fx * dist;
-    const desiredZ = this.feet.z - fz * dist;
-    const desiredY = Math.max(this.feet.y + 1 + dist, terrainHeight(desiredX, desiredZ) + 1.3);
-    const k = 1 - Math.exp(-3.4 * dt);
-    this.camPos.x += (desiredX - this.camPos.x) * k;
-    this.camPos.y += (desiredY - this.camPos.y) * k;
-    this.camPos.z += (desiredZ - this.camPos.z) * k;
-    this.cam.position.set(
-      this.camPos.x + (Math.random() - 0.5) * this.shake,
-      this.camPos.y + (Math.random() - 0.5) * this.shake * 0.6,
-      this.camPos.z,
-    );
-    this.cam.lookAt(this.feet.x, this.feet.y + 1, this.feet.z);
+    this.placeFollow(false, dt);
     this.shake = Math.max(0, this.shake - dt * 1.6);
   }
 
   private snapFollow(): void {
+    this.placeFollow(true, 0);
+  }
+
+  private placeFollow(immediate: boolean, dt: number): void {
+    const kAng = immediate ? 1 : 1 - Math.exp(-2.4 * dt);
+    this.camYaw = lerpAngle(this.camYaw, this.viewYaw, kAng);
+    this.camPitch += (this.viewPitch - this.camPitch) * kAng;
+    const cp = Math.cos(this.camPitch);
+    const lx = Math.sin(this.camYaw) * cp;
+    const ly = Math.sin(this.camPitch);
+    const lz = Math.cos(this.camYaw) * cp;
     const dist = BALANCE.followDist;
-    const fx = Math.sin(this.diverYaw);
-    const fz = Math.cos(this.diverYaw);
-    this.camPos.set(this.feet.x - fx * dist, this.feet.y + 1 + dist, this.feet.z - fz * dist);
-    this.cam.position.copy(this.camPos);
-    this.cam.lookAt(this.feet.x, this.feet.y + 1, this.feet.z);
+    const chestY = this.feet.y + 0.7;
+    const desiredX = this.feet.x - lx * dist;
+    const desiredZ = this.feet.z - lz * dist;
+    const desiredY = Math.max(chestY - ly * dist + 0.45, terrainHeight(desiredX, desiredZ) + 1.2);
+    if (immediate) {
+      this.camPos.set(desiredX, desiredY, desiredZ);
+    } else {
+      const k = 1 - Math.exp(-3.4 * dt);
+      this.camPos.x += (desiredX - this.camPos.x) * k;
+      this.camPos.y += (desiredY - this.camPos.y) * k;
+      this.camPos.z += (desiredZ - this.camPos.z) * k;
+    }
+    this.cam.position.set(
+      this.camPos.x + (immediate ? 0 : (Math.random() - 0.5) * this.shake),
+      this.camPos.y + (immediate ? 0 : (Math.random() - 0.5) * this.shake * 0.6),
+      this.camPos.z,
+    );
+    this.cam.up.set(0, 1, 0);
+    this.cam.lookAt(this.feet.x + lx * 2.2, chestY + ly * 2.2, this.feet.z + lz * 2.2);
   }
 
   private syncView(): void {
-    if (this.mode === 'dive' && !this.paused) {
-      const lookX = clamp(this.mouseDX, -64, 64);
-      const lookY = clamp(this.mouseDY, -48, 48);
-      this.viewYaw -= lookX * 0.0012;
-      this.viewPitch -= lookY * 0.001;
-      this.viewPitch = clamp(this.viewPitch, -1.05, 0.8);
+    if (this.mode === 'dive' && !this.paused && this.viewfinder) {
       const range = BALANCE.lensFov[this.save.gear.lens];
       this.fov = clamp(this.fov + this.wheel * 0.032, range[0], range[1]);
     }
-    const cp = Math.cos(this.viewPitch);
-    const dist = 6;
-    const tx = this.feet.x + Math.sin(this.viewYaw) * cp * dist;
-    const ty = this.feet.y + 1.55 + Math.sin(this.viewPitch) * dist;
-    const tz = this.feet.z + Math.cos(this.viewYaw) * cp * dist;
+    this.fillLook(this.viewYaw, this.viewPitch, this.look);
+    const eye = 0.35;
+    const ahead = 8;
     this.fpCam.fov = this.fov;
-    this.fpCam.position.set(this.feet.x, this.feet.y + 1.55, this.feet.z);
+    this.fpCam.position.set(
+      this.feet.x + this.look.x * eye,
+      this.feet.y + 0.5 + this.look.y * eye,
+      this.feet.z + this.look.z * eye,
+    );
     this.fpCam.up.set(0, 1, 0);
-    this.fpCam.lookAt(tx, ty, tz);
+    this.fpCam.lookAt(
+      this.fpCam.position.x + this.look.x * ahead,
+      this.fpCam.position.y + this.look.y * ahead,
+      this.fpCam.position.z + this.look.z * ahead,
+    );
     this.fpCam.updateProjectionMatrix();
     this.fpCam.updateMatrixWorld(true);
   }
@@ -718,10 +810,12 @@ export class Game {
 
   private finishDive(): void {
     if (this.mode !== 'dive' || this.wantJudge) return;
-    this.leaveViewfinder();
+    this.viewfinder = false;
     this.paused = false;
+    this.needsSteer = false;
     this.wantJudge = true;
     this.wantJudgeAt = performance.now();
+    if (document.pointerLockElement) document.exitPointerLock();
     if (this.pendingShots === 0) this.enterJudge();
   }
 
@@ -742,7 +836,10 @@ export class Game {
     const clamped = clampDiver(pose.x, pose.y, pose.z);
     this.feet.set(clamped.x, clamped.y, clamped.z);
     this.velX = 0;
+    this.velY = 0;
     this.velZ = 0;
+    this.needsSteer = false;
+    this.paused = false;
     this.invuln = 12;
     this.blackout = false;
     this.lockSurface = false;
@@ -754,9 +851,9 @@ export class Game {
     const dy = pose.lookY - (this.feet.y + 1.55);
     const dz = pose.lookZ - this.feet.z;
     this.viewYaw = Math.atan2(dx, dz);
-    this.diverYaw = this.viewYaw;
     this.camYaw = this.viewYaw;
-    this.viewPitch = clamp(Math.atan2(dy, Math.hypot(dx, dz)), -1, 0.75);
+    this.viewPitch = clamp(Math.atan2(dy, Math.hypot(dx, dz)), -BALANCE.pitchLimit, BALANCE.pitchLimit);
+    this.camPitch = this.viewPitch;
     this.viewfinder = true;
     this.suppressToggleUntil = performance.now() + 600;
     this.snapFollow();
@@ -938,11 +1035,11 @@ export class Game {
     const z = -6.2;
     const y = terrainHeight(x, z);
     this.feet.set(x, y, z);
+    this.diver.userData.swimming = false;
     this.diver.position.set(x, y, z);
-    this.diver.rotation.y = 0.25;
-    this.diver.rotation.z = 0;
+    this.diver.rotation.set(0, 0.25, 0);
     this.diver.visible = true;
-    animateDiver(this.diver, this.time, 0, false);
+    animateDiver(this.diver, this.time, false, false);
     this.placeShadow();
   }
 
@@ -1011,9 +1108,10 @@ export class Game {
       focus = preview.species ? t(`sp.${preview.species}`) : t('hud.nofocus');
       if (preview.momentId && preview.moment >= 20) focus += ` · ${t(`mo.${preview.momentId}`)}`;
     }
-    const vSpeed = verticalSpeed(this.save.gear.fins);
+    const fins = 1 + BALANCE.finsSpeed * this.save.gear.fins;
+    const climb = Math.max(0.65, (BALANCE.kickAccel * fins) / BALANCE.waterDrag + buoyancyAccel(depth));
     const mid = o2Drain(depth * 0.55, this.save.gear.suit, this.save.efficiency, false);
-    const need = Math.max(0, depth - BALANCE.surfaceDepth) / vSpeed * mid;
+    const need = Math.max(0, depth - BALANCE.surfaceDepth) / climb * mid;
     const o2frac = this.o2 / maxO2;
     return {
       mode: this.mode,
@@ -1043,6 +1141,7 @@ export class Game {
       mm: focalMm(this.fov),
       focus,
       paused: this.paused,
+      lookSens: this.save.lookSens,
       bursting: this.burstT > 0,
       toasts: this.toasts.map((toast) => toast.key),
       flash: this.flash,
@@ -1073,28 +1172,28 @@ export class Game {
       }
       this.keys.add(e.code);
       this.just.add(e.code);
-      if (this.mode === 'dive' && !this.paused) {
-        if (e.code === 'KeyF') this.kickQueued = true;
-        if (e.code === 'KeyW') {
-          const now = performance.now();
-          if (now - this.lastW < 280) this.kickQueued = true;
-          this.lastW = now;
-        }
-      }
+      if (this.mode === 'dive' && !this.paused && e.code === 'KeyF') this.kickQueued = true;
       if (e.code === 'Escape') this.onEscape();
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
     this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     this.canvas.addEventListener('mousedown', (e) => {
       this.audio.unlock();
+      if (this.mode === 'dive' && !this.wantJudge && (this.paused || this.needsSteer || !document.pointerLockElement)) {
+        if (e.button === 2) e.preventDefault();
+        const lock = this.canvas.requestPointerLock();
+        void Promise.resolve(lock).catch(() => {});
+        return;
+      }
       if (e.button === 0) this.lmb = true;
       if (e.button === 2) {
         e.preventDefault();
+        this.relockUntil = performance.now() + 500;
         this.toggleViewfinder();
       }
     });
     window.addEventListener('mousemove', (e) => {
-      if (!this.viewfinder || !document.pointerLockElement) return;
+      if (this.mode !== 'dive' || !document.pointerLockElement) return;
       this.mouseDX += e.movementX;
       this.mouseDY += e.movementY;
     });
@@ -1108,51 +1207,52 @@ export class Game {
       { passive: false },
     );
     document.addEventListener('pointerlockchange', () => {
-      if (document.pointerLockElement || !this.viewfinder) return;
-      // Esc drops the lock. Ignore the unlock that follows our own right-click exit,
-      // and a lock the browser releases in the same gesture as entering.
-      if (performance.now() < this.ignoreUnlockUntil) return;
-      this.viewfinder = false;
+      if (document.pointerLockElement) {
+        if (this.mode === 'dive' && this.needsSteer && !this.wantJudge) {
+          this.needsSteer = false;
+          this.paused = false;
+        }
+        return;
+      }
+      if (this.mode !== 'dive' || this.wantJudge) return;
+      if (performance.now() < this.relockUntil) {
+        const lock = this.canvas.requestPointerLock();
+        void Promise.resolve(lock).catch(() => this.holdForSteer());
+        return;
+      }
+      this.holdForSteer();
     });
     window.addEventListener('blur', () => {
       this.keys.clear();
-      this.viewfinder = false;
+      if (this.mode === 'dive' && !this.wantJudge) this.holdForSteer();
     });
   }
 
-  private ignoreUnlockUntil = 0;
-
   private suppressToggleUntil = 0;
+
+  private holdForSteer(): void {
+    if (this.mode !== 'dive' || this.wantJudge) return;
+    this.needsSteer = true;
+    this.paused = true;
+  }
 
   private toggleViewfinder(): void {
     if (performance.now() < this.suppressToggleUntil) return;
     if (this.mode !== 'dive' || this.paused) return;
-    if (this.viewfinder) {
-      this.leaveViewfinder();
-      return;
+    this.viewfinder = !this.viewfinder;
+    if (!document.pointerLockElement) {
+      this.relockUntil = performance.now() + 500;
+      const lock = this.canvas.requestPointerLock();
+      void Promise.resolve(lock).catch(() => this.holdForSteer());
     }
-    if (performance.now() < this.ignoreUnlockUntil) return;
-    this.viewYaw = this.diverYaw;
-    this.viewPitch = -0.26;
-    this.viewfinder = true;
-    this.ignoreUnlockUntil = performance.now() + 120;
-    const lock = this.canvas.requestPointerLock();
-    void Promise.resolve(lock).catch(() => {});
-  }
-
-  private leaveViewfinder(): void {
-    this.viewfinder = false;
-    this.ignoreUnlockUntil = performance.now() + 120;
-    if (document.pointerLockElement) document.exitPointerLock();
   }
 
   private onEscape(): void {
-    if (this.viewfinder || document.pointerLockElement) {
-      this.leaveViewfinder();
-      return;
-    }
     if (this.mode === 'dive') {
-      this.paused = !this.paused;
+      this.viewfinder = false;
+      this.relockUntil = 0;
+      this.holdForSteer();
+      if (document.pointerLockElement) document.exitPointerLock();
       return;
     }
     if (this.mode === 'breath' || this.mode === 'apnea') {

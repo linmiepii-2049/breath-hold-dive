@@ -144,6 +144,11 @@ export class OceanLife {
     this.spawnCast();
   }
 
+  /** True while a debug teleport is holding the reef still for a framed shot. */
+  framing(): boolean {
+    return this.debugLock > 0;
+  }
+
   /**
    * Freeze the cast and place one animal, or one special moment, in front of a photo spot.
    * Only called from the ?debug=1 panel.

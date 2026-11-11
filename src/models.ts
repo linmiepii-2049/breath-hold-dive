@@ -393,16 +393,27 @@ export function tintDiver(diver: Group, suitLevel: number, finLevel: number): vo
   }
 }
 
-export function animateDiver(diver: Group, time: number, swim: number, burst: boolean): void {
-  const moving = swim > 0.25;
-  const rate = moving ? (burst ? 13 : 8) : 2;
-  const amp = moving ? 0.65 : 0.08;
+/** Standing idle on the sand. In the water, a fin kick while thrusting and a quiet glide otherwise. */
+export function animateDiver(diver: Group, time: number, kicking: boolean, burst: boolean): void {
+  const legL = diver.userData.legL as Group;
+  const legR = diver.userData.legR as Group;
+  const armL = diver.userData.armL as Group;
+  const armR = diver.userData.armR as Group;
+  if (!diver.userData.swimming) {
+    const s = Math.sin(time * 1.6);
+    legL.rotation.x = s * 0.06;
+    legR.rotation.x = -s * 0.06;
+    armL.rotation.x = -s * 0.04;
+    armR.rotation.x = s * 0.04;
+    return;
+  }
+  const rate = burst ? 13 : kicking ? 8.2 : 1.7;
   const s = Math.sin(time * rate);
-  (diver.userData.legL as Group).rotation.x = s * amp;
-  (diver.userData.legR as Group).rotation.x = -s * amp;
-  (diver.userData.armL as Group).rotation.x = -s * amp * 0.55;
-  (diver.userData.armR as Group).rotation.x = s * amp * 0.55;
-  diver.rotation.z = s * (moving ? 0.05 : 0.015);
+  const amp = burst ? 0.85 : kicking ? 0.58 : 0.08;
+  legL.rotation.x = 0.42 + s * amp;
+  legR.rotation.x = 0.42 - s * amp;
+  armL.rotation.x = kicking ? -0.5 + s * 0.22 : -0.82;
+  armR.rotation.x = kicking ? -0.5 - s * 0.22 : -0.82;
 }
 
 export function animateTail(group: Group, time: number, speed: number, phase = 0): void {
