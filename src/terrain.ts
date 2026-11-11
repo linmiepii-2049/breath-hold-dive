@@ -11,9 +11,16 @@ export function terrainHeight(x: number, z: number): number {
 
   let depth = 8 + 11 * smoothstep(4, 50, z);
   depth += 22 * smoothstep(38, 76, z) * smoothstep(-4, 22, x);
+  // The trench mouth. A straight swim down the lane keeps falling past 23 m
+  // instead of riding a shelf, and 33 m is on that line before the deep pocket.
+  const mouth = smoothstep(24, 46, z) * smoothstep(-2, 14, x) * (1 - smoothstep(22, 30, x));
+  depth += 18 * mouth;
   // Lane straight off the spawn (x ≈ 6, heading +Z). The shelf to the left stays shallow.
   const lane = smoothstep(10, 22, z) * Math.exp(-((x - 6.2) * (x - 6.2)) / (2 * 9 * 9));
   depth += 9 * lane;
+  // Anemone ledge, left of the lane, held around 6 m so a short descent can frame it.
+  const ledge = Math.exp(-((x + 6) * (x + 6)) / (2 * 4.2 * 4.2) - ((z - 13) * (z - 13)) / (2 * 3.4 * 3.4));
+  depth -= 4.6 * ledge;
   // The shelf under the spawn is only ~8 m. Open a drop in front of it so a
   // straight descent has water under the diver, then fade it out before the garden.
   const bowl = smoothstep(3.5, 10, z) * (1 - smoothstep(13.5, 17.2, z));

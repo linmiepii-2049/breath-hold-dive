@@ -456,6 +456,7 @@ export class GameUI {
         <div class="vf-mm" id="mm"></div>
       </div>
       <div class="toasts" id="toasts"></div>
+      ${m.touch ? `<div class="steer-zone" aria-hidden="true"><span>${t('touch.steerHint')}</span></div>` : ''}
       <div id="vignette"></div>
       <div id="blackout"></div>
       <div id="flash"></div>
@@ -658,10 +659,11 @@ export class GameUI {
     if (stam) stam.style.width = `${Math.max(0, m.stamina)}%`;
     const warn = this.root.querySelector('#warn');
     if (warn) {
-      warn.classList.toggle('charge', m.sharkCharging && !m.atSurface);
-      if (m.atSurface) warn.innerHTML = t(m.touch ? 'hud.surfaceTouch' : 'hud.surface');
-      else if (m.sharkCharging) warn.textContent = t('hud.sharkCharge');
-      else warn.textContent = m.sharkThreat ? t('hud.shark') : m.warnReturn ? t('hud.return') : '';
+      warn.classList.toggle('charge', m.sharkCharging);
+      if (m.sharkCharging) warn.textContent = t('hud.sharkCharge');
+      else if (m.sharkThreat) warn.textContent = t('hud.shark');
+      else if (m.atSurface) warn.innerHTML = t(m.touch ? 'hud.surfaceTouch' : 'hud.surface');
+      else warn.textContent = m.warnReturn ? t('hud.return') : '';
     }
     const pin = this.root.querySelector('#pin') as HTMLElement | null;
     if (pin) pin.style.top = `${Math.max(0, Math.min(100, (m.depth / 40) * 100))}%`;
@@ -697,13 +699,13 @@ export class GameUI {
         ? t(m.touch ? 'hud.pauseHintTouch' : 'hud.pauseHint')
         : t(m.touch ? 'hud.pauseSteerTouch' : 'hud.pauseSteer');
     }
-    this.root.classList.toggle('charging', m.sharkCharging && !m.atSurface);
+    this.root.classList.toggle('charging', m.sharkCharging);
     const toast = this.root.querySelector('#toasts');
     if (toast) toast.innerHTML = m.toasts.map((item) => `<div class="toast">${item.text ?? t(item.key)}</div>`).join('');
     const vig = this.root.querySelector('#vignette') as HTMLElement | null;
     const black = this.root.querySelector('#blackout') as HTMLElement | null;
     const flash = this.root.querySelector('#flash') as HTMLElement | null;
-    if (vig) vig.style.opacity = String(m.sharkCharging && !m.atSurface ? Math.max(m.vignette, 0.72) : m.vignette);
+    if (vig) vig.style.opacity = String(m.sharkCharging ? Math.max(m.vignette, 0.72) : m.vignette);
     if (black) black.style.opacity = String(m.blackout);
     if (flash) flash.style.opacity = String(m.flash);
   }

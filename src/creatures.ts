@@ -528,7 +528,13 @@ export class OceanLife {
   private spawnCast(): void {
     const anemoneY = terrainHeight(LANDMARKS.anemone.x, LANDMARKS.anemone.z);
     for (let i = 0; i < 4; i++) {
-      const mesh = makeFish({ length: 0.36, height: 0.2, color: 0xff6a1a, bands: 3 });
+      const mesh = makeFish({ length: 0.52, height: 0.3, color: 0xff6a1a, belly: 0xfff1dc, bands: 3 });
+      mesh.traverse((obj) => {
+        const mat = (obj as { material?: MeshLambertMaterial }).material;
+        if (!mat?.emissive) return;
+        mat.emissive.copy(mat.color);
+        mat.emissiveIntensity = mat.color.getHex() === 0xf4f7f8 ? 0.2 : 0.62;
+      });
       this.swimmers.push({
         mesh,
         species: 'clownfish',
@@ -539,8 +545,8 @@ export class OceanLife {
         state: 'hover',
         timer: i,
         speed: 0.6,
-        radius: 0.22,
-        optimal: 2.3,
+        radius: 0.34,
+        optimal: 3.2,
         rarity: 12,
         dangerous: false,
         wps: [],

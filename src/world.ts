@@ -31,7 +31,7 @@ import { terrainHeight } from './terrain';
 import { rng } from './util';
 
 export const LANDMARKS = {
-  anemone: { x: 7.2, z: 17.5 },
+  anemone: { x: -6, z: 13 },
   octopus: { x: -8.4, z: 26 },
   bait: { x: 1.5, z: 32 },
 };
@@ -134,6 +134,7 @@ export function createWorld(): World {
   scene.add(reef);
   scene.add(wall);
   scene.add(buildBeach());
+  scene.add(buildTrenchGuide());
 
   const anemone = buildAnemone();
   anemone.position.set(LANDMARKS.anemone.x, terrainHeight(LANDMARKS.anemone.x, LANDMARKS.anemone.z), LANDMARKS.anemone.z);
@@ -149,7 +150,7 @@ export function createWorld(): World {
   let detail = true;
 
   const shallow = new Color('#178f9c');
-  const deep = new Color('#07131e');
+  const deep = new Color('#143246');
   const air = new Color('#b7e0ec');
 
   return {
@@ -165,14 +166,15 @@ export function createWorld(): World {
     sun,
     solids,
     update(time, camY, diverDepth) {
-      const diveT = Math.min(1, diverDepth / 34);
+      const diveT = Math.min(1, diverDepth / 42);
       const under = Math.min(1, Math.max(0, (0.4 - camY) / 4));
       const waterMix = Math.max(under, diveT * 0.85);
-      fog.color.copy(air).lerp(shallow, Math.min(1, waterMix * 1.35)).lerp(deep, diveT);
-      const haze = 0.008 + waterMix * 0.012 + diveT * 0.042;
-      fog.density = detail ? haze : haze * 0.55;
-      hemi.intensity = 1.05 - diveT * 0.42;
-      sun.intensity = 1.45 - diveT * 0.62;
+      fog.color.copy(air).lerp(shallow, Math.min(1, waterMix * 1.15)).lerp(deep, diveT * 0.62);
+      const haze = 0.006 + waterMix * 0.007 + diveT * 0.016;
+      // Near field (about 8 m) stays readable on every tier. The low tier is thinner still.
+      fog.density = Math.min(detail ? 0.03 : 0.018, detail ? haze : haze * 0.7);
+      hemi.intensity = 1.05 - diveT * 0.15;
+      sun.intensity = 1.4 - diveT * 0.2;
       const mat = floor.material as ShaderMaterial;
       mat.uniforms.uTime.value = time;
       waterMat.opacity = camY > 0.4 ? 0.3 : 0.55;
@@ -205,6 +207,26 @@ export function createWorld(): World {
       });
     },
   };
+}
+
+/** Gold beads down the offshore lane, so the trench mouth is a line you can follow. */
+function buildTrenchGuide(): Group {
+  const g = new Group();
+  const mat = new MeshBasicMaterial({ color: 0xffe08a });
+  const bead = new SphereGeometry(0.2, 8, 6);
+  for (let z = 22; z <= 62; z += 4) {
+    const x = 7.2 + (z - 22) * 0.15;
+    const y = terrainHeight(x, z) + 1.7;
+    const m = new Mesh(bead, mat);
+    m.position.set(x, y, z);
+    g.add(m);
+  }
+  const post = new Mesh(new CylinderGeometry(0.09, 0.09, 7, 6), mat);
+  const lipX = 8;
+  const lipZ = 26;
+  post.position.set(lipX, terrainHeight(lipX, lipZ) + 3.4, lipZ);
+  g.add(post);
+  return g;
 }
 
 function buildFloor(): Mesh {
@@ -244,18 +266,18 @@ function buildFloor(): Mesh {
         vec3 sand = vec3(0.78, 0.68, 0.46);
         vec3 rock = vec3(0.33, 0.46, 0.49);
         vec3 base = mix(rock, sand, smoothstep(0.58, 0.92, flatN));
-        float deepT = clamp((-vWorld.y - 6.0) / 30.0, 0.0, 1.0);
+        float deepT = clamp((-vWorld.y - 8.0) / 36.0, 0.0, 1.0);
         deepT = deepT * deepT * (3.0 - 2.0 * deepT);
-        base = mix(base, vec3(0.06, 0.13, 0.18), deepT);
+        base = mix(base, vec3(0.2, 0.38, 0.42), deepT * 0.55);
         float n1 = sin(vWorld.x * 0.45 + uTime * 0.85) * sin(vWorld.z * 0.38 - uTime * 0.65);
         float n2 = sin(vWorld.x * 0.2 - uTime * 0.4 + vWorld.z * 0.17);
         float ca = smoothstep(0.4, 1.3, n1 + n2);
-        float shallow = 1.0 - clamp((-vWorld.y - 5.0) / 14.0, 0.0, 1.0);
+        float shallow = 1.0 - clamp((-vWorld.y - 6.0) / 22.0, 0.0, 1.0);
         ca *= shallow * flatN;
         vec3 sunDir = normalize(vec3(-0.28, 0.92, 0.25));
         float lam = clamp(dot(normalize(vNormalW), sunDir), 0.0, 1.0);
-        vec3 col = base * (0.34 + 0.8 * lam) + vec3(0.55, 0.75, 0.68) * ca * 1.15;
-        col *= mix(1.0, 0.5, deepT);
+        vec3 col = base * (0.48 + 0.7 * lam) + vec3(0.55, 0.75, 0.68) * ca * 1.15;
+        col *= mix(1.0, 0.82, deepT);
         gl_FragColor = vec4(col, 1.0);
         #include <fog_fragment>
       }
@@ -340,14 +362,18 @@ function buildReef(solids: Solid[]): Mesh {
     }
   }
   // Landmark rocks so the octopus crevice and anemone read clearly.
+  // The anemone's open side faces the spawn, so a level shot is not a rock.
   const rockColor = new Color(0x5d7278);
   for (const spot of [LANDMARKS.octopus, LANDMARKS.anemone]) {
     const floor = terrainHeight(spot.x, spot.z);
-    for (let k = 0; k < 4; k++) {
-      const ang = k * 1.6;
-      const px = spot.x + Math.cos(ang) * 1.1;
+    const anemone = spot === LANDMARKS.anemone;
+    const count = anemone ? 3 : 4;
+    for (let k = 0; k < count; k++) {
+      const ang = anemone ? Math.PI * 0.85 + k * 0.7 : k * 1.6;
+      const ring = anemone ? 2.1 : 1.1;
+      const px = spot.x + Math.cos(ang) * ring;
       const py = floor + 0.45;
-      const pz = spot.z + Math.sin(ang) * 1.1;
+      const pz = spot.z + Math.sin(ang) * ring;
       const rx = rand();
       const ry = rand() * 3;
       const rz = rand();
