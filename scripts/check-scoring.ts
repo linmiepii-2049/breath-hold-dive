@@ -111,6 +111,49 @@ const actingClown = scoreFrame({
 });
 assert(actingClown.moment === 10 && actingClown.total >= 60 && actingClown.total <= 75, `clown in motion ${actingClown.total}`);
 
+const framedMoving = scoreFrame({
+  subjects: [
+    subject({
+      species: 'clownfish',
+      rarity: 12,
+      acting: true,
+      fill: 0.14,
+      radiusNdcX: 0.08,
+      radiusNdcY: 0.14,
+      ndcX: 0.33,
+      ndcY: -0.02,
+      distance: 2.4,
+      optimal: 2.3,
+    }),
+  ],
+  depth: 1,
+  nearestPredator: 40,
+});
+const framedIdle = scoreFrame({
+  subjects: [
+    subject({
+      species: 'clownfish',
+      rarity: 12,
+      acting: false,
+      fill: 0.14,
+      radiusNdcX: 0.08,
+      radiusNdcY: 0.14,
+      ndcX: 0.33,
+      ndcY: -0.02,
+      distance: 2.4,
+      optimal: 2.3,
+    }),
+  ],
+  depth: 1,
+  nearestPredator: 40,
+});
+assert(
+  framedMoving.moment === 10 && framedMoving.total >= 60 && framedMoving.total <= 64,
+  `clear moving clown ${framedMoving.total} (${framedMoving.composition}/${framedMoving.rarity}/${framedMoving.moment}/${framedMoving.distanceDanger})`,
+);
+assert(framedIdle.moment === 0 && framedIdle.total < 60, `idle clown stays under 60 (${framedIdle.total})`);
+assert(framedMoving.total > framedIdle.total, 'motion is what accepts the clown');
+
 const orca = scoreFrame({
   subjects: [subject({ species: 'orca', rarity: 25, dangerous: true, distance: 12, optimal: 13, fill: 0.34, radiusNdcY: 0.34 })],
   depth: 30,

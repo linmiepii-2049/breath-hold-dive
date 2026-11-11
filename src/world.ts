@@ -11,16 +11,19 @@ import {
   FogExp2,
   Group,
   HemisphereLight,
+  Euler,
   Matrix4,
   Mesh,
   MeshBasicMaterial,
   MeshLambertMaterial,
   MeshPhongMaterial,
   PlaneGeometry,
+  Quaternion,
   Scene,
   ShaderMaterial,
   SphereGeometry,
   UniformsLib,
+  Vector3,
   UniformsUtils,
 } from 'three';
 import { mergeParts, M, UNIT } from './models';
@@ -33,10 +36,23 @@ export const LANDMARKS = {
   bait: { x: 1.5, z: 32 },
 };
 
+/** Oriented box that contains the rock mesh. `r` is the half-diagonal, for a broadphase. */
 export interface Solid {
   x: number;
   y: number;
   z: number;
+  hx: number;
+  hy: number;
+  hz: number;
+  ax: number;
+  ay: number;
+  az: number;
+  bx: number;
+  by: number;
+  bz: number;
+  cx: number;
+  cy: number;
+  cz: number;
   r: number;
 }
 
@@ -236,6 +252,57 @@ function buildFloor(): Mesh {
   return new Mesh(geo, mat);
 }
 
+const boxEuler = new Euler();
+const boxQuat = new Quaternion();
+const boxX = new Vector3();
+const boxY = new Vector3();
+const boxZ = new Vector3();
+
+/**
+ * The icosahedron sits inside the unit cube. Scaled and rotated, that cube is an
+ * oriented box that contains the mesh, including a ledge or a tall wall.
+ */
+function pushRock(
+  solids: Solid[],
+  x: number,
+  y: number,
+  z: number,
+  rx: number,
+  ry: number,
+  rz: number,
+  sx: number,
+  sy: number,
+  sz: number,
+): void {
+  boxEuler.set(rx, ry, rz);
+  boxQuat.setFromEuler(boxEuler);
+  boxX.set(1, 0, 0).applyQuaternion(boxQuat);
+  boxY.set(0, 1, 0).applyQuaternion(boxQuat);
+  boxZ.set(0, 0, 1).applyQuaternion(boxQuat);
+  const skin = 0.08;
+  const hx = Math.abs(sx) + skin;
+  const hy = Math.abs(sy) + skin;
+  const hz = Math.abs(sz) + skin;
+  solids.push({
+    x,
+    y,
+    z,
+    hx,
+    hy,
+    hz,
+    ax: boxX.x,
+    ay: boxX.y,
+    az: boxX.z,
+    bx: boxY.x,
+    by: boxY.y,
+    bz: boxY.z,
+    cx: boxZ.x,
+    cy: boxZ.y,
+    cz: boxZ.z,
+    r: Math.hypot(hx, hy, hz),
+  });
+}
+
 function buildReef(solids: Solid[]): Mesh {
   const rand = rng(2049);
   const parts: { geo: BufferGeometry; matrix: Matrix4; color: Color }[] = [];
@@ -278,8 +345,7 @@ function buildReef(solids: Solid[]): Mesh {
         matrix: M(px, py, pz, rx, ry, rz, sx, 0.55, 0.7),
         color: rockColor,
       });
-      // Unit icosahedron has radius 1, so the mesh reaches the largest scale.
-      solids.push({ x: px, y: py, z: pz, r: Math.max(sx, 0.55, 0.7) + 0.28 });
+      pushRock(solids, px, py, pz, rx, ry, rz, sx, 0.55, 0.7);
     }
   }
   for (let i = 0; i < 26; i++) {
@@ -289,12 +355,15 @@ function buildReef(solids: Solid[]): Mesh {
     if (floor > -3) continue;
     const s = 0.4 + rand() * 1.1;
     const py = floor + s * 0.35;
+    const rx = rand();
+    const ry = rand() * 4;
+    const rz = rand() * 0.4;
     parts.push({
       geo: UNIT.ico,
-      matrix: M(x, py, z, rand(), rand() * 4, rand() * 0.4, s, s * 0.7, s),
+      matrix: M(x, py, z, rx, ry, rz, s, s * 0.7, s),
       color: new Color(0x4e656c).offsetHSL(0, 0, (rand() - 0.5) * 0.06),
     });
-    if (s >= 0.72) solids.push({ x, y: py, z, r: s + 0.28 });
+    if (s >= 0.55) pushRock(solids, x, py, z, rx, ry, rz, s, s * 0.7, s);
   }
   const geo = mergeParts(parts);
   const mat = new MeshLambertMaterial({ vertexColors: true, flatShading: true });
@@ -311,22 +380,16 @@ function buildWall(solids: Solid[]): Mesh {
     const h = 3 + rand() * 8;
     const s = 1.4 + rand() * 2.2;
     const py = floor + h * 0.35;
+    const rx = rand();
+    const ry = rand() * 3;
+    const rz = rand();
     parts.push({
       geo: UNIT.ico,
-      matrix: M(x, py, z, rand(), rand() * 3, rand(), s, h, s * 0.8),
+      matrix: M(x, py, z, rx, ry, rz, s, h, s * 0.8),
       color: new Color(0x3e5560).offsetHSL(0, 0, (rand() - 0.5) * 0.05),
     });
-    // The mesh is s wide and 2h tall. One undersized sphere left the torso in the rock.
-    const r = Math.max(s, s * 0.8) + 0.28;
-    const bottom = py - h + r;
-    const top = py + h - r;
-    const step = Math.max(0.9, r * 0.85);
-    let placed = false;
-    for (let y = bottom; y <= top + 0.01; y += step) {
-      solids.push({ x, y: Math.max(floor + r * 0.45, y), z, r });
-      placed = true;
-    }
-    if (!placed) solids.push({ x, y: Math.max(floor + r * 0.45, py), z, r });
+    // Same orientation as the mesh. A stack of spheres along world Y missed a tilted wall.
+    pushRock(solids, x, py, z, rx, ry, rz, s, h, s * 0.8);
   }
   const geo = mergeParts(parts);
   return new Mesh(geo, new MeshLambertMaterial({ vertexColors: true, flatShading: true }));

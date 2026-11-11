@@ -26,7 +26,7 @@ import {
 } from './balance';
 import { OceanLife, type SimEvent } from './creatures';
 import { setLang, t } from './i18n';
-import { animateDiver, makeDiver, shadeDiver, tintDiver } from './models';
+import { animateDiver, diverStroke, makeDiver, shadeDiver, tintDiver } from './models';
 import { scoreFrame, type FrameSubject, type ScoreBreakdown } from './scoring';
 import { albumReplaces, defaultSave, loadSave, writeSave, type SaveData } from './save';
 import { clampDiver, depthMeters, terrainHeight } from './terrain';
@@ -44,7 +44,7 @@ import {
 import type { CommentId, GearId, Lang } from './types';
 import { GameUI, type UIModel } from './ui';
 import { clamp, lerpAngle } from './util';
-import { createWorld, moveSnell, type World } from './world';
+import { createWorld, moveSnell, type Solid, type World } from './world';
 
 interface Shot {
   dataUrl: string;
@@ -128,6 +128,8 @@ export class Game {
   private look = new Vector3();
   private bodyRight = new Vector3();
   private bodyBelly = new Vector3();
+  private sampleLook = new Vector3();
+  private sampleBelly = new Vector3();
   private bodyBasis = new Matrix4();
   private fov = 48;
   private viewfinder = false;
@@ -731,22 +733,23 @@ export class Game {
     this.resolveSolids();
   }
 
-  /** Push every solid off the head, torso, and both fin tips, including the kick sweep. */
+  /** Push every solid off the head, shoulders, torso, and fin tips. */
   private resolveSolids(): void {
-    const reach = 8;
-    for (let pass = 0; pass < 4; pass++) {
-      this.fillBodyPoints();
+    for (let pass = 0; pass < 5; pass++) {
       const rocks = this.world.solids;
       for (let i = 0; i < rocks.length; i++) {
         const s = rocks[i];
-        if (Math.abs(s.x - this.feet.x) > reach || Math.abs(s.z - this.feet.z) > reach) continue;
-        this.pushPoints(s.x, s.y, s.z, s.r, 'rock');
+        if (Math.abs(s.x - this.feet.x) > s.r + 2.2 || Math.abs(s.z - this.feet.z) > s.r + 2.2) continue;
+        this.fillBodyPoints();
+        this.pushBox(s, 'rock');
       }
+      this.pushTerrain();
       const bodies = this.life.bodies();
       for (let i = 0; i < bodies.length; i++) {
         const s = bodies[i];
-        if (Math.abs(s.x - this.feet.x) > reach || Math.abs(s.z - this.feet.z) > reach) continue;
-        this.pushPoints(s.x, s.y, s.z, s.r, s.kind);
+        if (Math.abs(s.x - this.feet.x) > 8 || Math.abs(s.z - this.feet.z) > 8) continue;
+        this.fillBodyPoints();
+        this.pushSphere(s.x, s.y, s.z, s.r, s.kind);
       }
     }
     const clamped = clampDiver(this.feet.x, this.feet.y, this.feet.z);
@@ -755,8 +758,9 @@ export class Game {
 
   /**
    * Local diver space: +Y is the head (the look), +Z is the belly. Matches makeDiver.
-   * Fin tips are sampled at the glide angle and at both ends of the kick, so a
-   * head-down or turning pose cannot leave the cyan blades in the mesh.
+   * Each sphere is the bounding sphere of one mesh (head, shoulders, torso, fins)
+   * at the same kick angle the renderer uses, so a ledge or a wall cannot swallow
+   * a part that the old sample points missed.
    */
   private fillBodyPoints(): void {
     this.fillLook(this.viewYaw, this.viewPitch, this.look);
@@ -764,13 +768,20 @@ export class Game {
     if (flat < 1e-4) this.bodyRight.set(-Math.cos(this.viewYaw), 0, Math.sin(this.viewYaw));
     else this.bodyRight.set(this.look.z / flat, 0, -this.look.x / flat);
     this.bodyBelly.crossVectors(this.bodyRight, this.look);
+    const kicking = this.keys.has('Space') || this.burstT > 0;
+    const bursting = this.burstT > 0;
+    const stroke = diverStroke(kicking, bursting, this.strokePhase);
+    const cW = Math.cos(stroke.wobble);
+    const sW = Math.sin(stroke.wobble);
+    this.sampleLook.copy(this.look).multiplyScalar(cW).addScaledVector(this.bodyBelly, sW);
+    this.sampleBelly.copy(this.bodyBelly).multiplyScalar(cW).addScaledVector(this.look, -sW);
     const back = 0.55;
     const ox = this.feet.x - this.look.x * back;
     const oy = this.feet.y + 0.42 - this.look.y * back;
     const oz = this.feet.z - this.look.z * back;
     const rx = this.bodyRight;
-    const lk = this.look;
-    const by = this.bodyBelly;
+    const lk = this.sampleLook;
+    const by = this.sampleBelly;
     const pts = this.bodyPts;
     let n = 0;
     const add = (lx: number, ly: number, lz: number, r: number) => {
@@ -781,33 +792,35 @@ export class Game {
       p.r = r;
       n++;
     };
-    add(0, 1.78, 0, 0.18);
-    add(0, 1.18, 0.18, 0.36);
-    add(0, 1.18, -0.14, 0.26);
-    add(0, 0.82, 0, 0.28);
-    add(0.34, 1.2, 0, 0.14);
-    add(-0.34, 1.2, 0, 0.14);
-    const stretch = 1 + 0.12 * this.save.gear.fins;
-    const blade = 0.46 * stretch;
-    const angles = [0.4, -0.2, -1.45];
-    for (const side of [-0.12, 0.12]) {
-      for (const th of angles) {
-        const c = Math.cos(th);
-        const s = Math.sin(th);
-        const samples = [-blade, 0, blade];
-        for (let i = 0; i < samples.length; i++) {
-          const ly0 = -0.64;
-          const lz0 = -0.06 + samples[i];
-          const ly = ly0 * c - lz0 * s;
-          const lz = ly0 * s + lz0 * c;
-          add(side, 0.78 + ly, lz, samples[i] === 0 ? 0.14 : 0.12);
-        }
-      }
+    // SphereGeometry radius is 1. The containing radius is the largest scale, plus a hair.
+    const skin = 0.03;
+    add(0, 1.62, 0, 0.17 + skin);
+    add(0, 1.62, 0.1, 0.13 + skin);
+    add(0, 1.66, 0, 0.16 + skin);
+    add(0, 1.18, 0, 0.42 + skin);
+    add(0.28, 1.28, 0, 0.16 + skin);
+    add(-0.28, 1.28, 0, 0.16 + skin);
+    add(0, 0.82, 0, 0.26 + skin);
+    const rotX = (y: number, z: number, ang: number) => {
+      const c = Math.cos(ang);
+      const s = Math.sin(ang);
+      return { y: y * c - z * s, z: y * s + z * c };
+    };
+    for (const side of [-0.28, 0.28]) {
+      const arm = rotX(-0.2475, 0, stroke.arm);
+      add(side, 1.28 + arm.y, arm.z, 0.275 + skin);
+    }
+    for (const side of [-0.1, 0.1]) {
+      const leg = rotX(-0.279, 0, stroke.leg);
+      add(side, 0.78 + leg.y, leg.z, 0.31 + skin);
+      const stretch = 1 + 0.12 * this.save.gear.fins;
+      const fin = rotX(-0.64, -0.06, stroke.leg);
+      add(side, 0.78 + fin.y, fin.z, 0.46 * stretch + skin);
     }
     pts.length = n;
   }
 
-  /** Smallest gap between a body sample and a solid. Negative means the mesh can intersect. */
+  /** Smallest gap between a body sample and a rock box. Negative means the mesh can intersect. */
   private minBodyGap(): number {
     this.fillBodyPoints();
     let gap = 99;
@@ -816,74 +829,156 @@ export class Game {
       const p = this.bodyPts[i];
       for (let j = 0; j < solids.length; j++) {
         const s = solids[j];
-        const d = Math.hypot(p.x - s.x, p.y - s.y, p.z - s.z) - s.r - p.r;
+        if (Math.abs(s.x - p.x) > s.r + 1 || Math.abs(s.z - p.z) > s.r + 1) continue;
+        const d = this.boxClearance(p.x, p.y, p.z, p.r, s);
         if (d < gap) gap = d;
       }
     }
     return gap;
   }
 
-  private pushPoints(x: number, y: number, z: number, r: number, kind: string): void {
-    for (let i = 0; i < this.bodyPts.length; i++) {
-      const p = this.bodyPts[i];
-      this.pushOut(p.x, p.y, p.z, x, y, z, r, kind, p.r);
-    }
+  /** Positive when the sample sphere is outside the box. */
+  private boxClearance(px: number, py: number, pz: number, body: number, s: Solid): number {
+    const dx = px - s.x;
+    const dy = py - s.y;
+    const dz = pz - s.z;
+    const lx = dx * s.ax + dy * s.ay + dz * s.az;
+    const ly = dx * s.bx + dy * s.by + dz * s.bz;
+    const lz = dx * s.cx + dy * s.cy + dz * s.cz;
+    const ox = Math.abs(lx) - s.hx;
+    const oy = Math.abs(ly) - s.hy;
+    const oz = Math.abs(lz) - s.hz;
+    const outside = Math.hypot(Math.max(ox, 0), Math.max(oy, 0), Math.max(oz, 0));
+    if (outside > 0) return outside - body;
+    return Math.max(ox, oy, oz) - body;
   }
 
-  private pushOut(
+  /** Keep the head, shoulders, torso, and fins above the sand on a slope. */
+  private pushTerrain(): void {
+    this.fillBodyPoints();
+    let gap = 0;
+    for (let i = 0; i < this.bodyPts.length; i++) {
+      const p = this.bodyPts[i];
+      const pen = terrainHeight(p.x, p.z) + p.r - p.y;
+      if (pen > gap) gap = pen;
+    }
+    if (gap > 0) this.applyPush(0, 1, 0, gap, 'sand');
+  }
+
+  /** One correction: the sample that is deepest in the box. */
+  private pushBox(s: Solid, kind: string): void {
+    let gap = 0;
+    let nx = 0;
+    let ny = 0;
+    let nz = 0;
+    for (let i = 0; i < this.bodyPts.length; i++) {
+      const p = this.bodyPts[i];
+      const sep = this.boxPush(p.x, p.y, p.z, p.r, s);
+      if (sep && sep.gap > gap) {
+        gap = sep.gap;
+        nx = sep.nx;
+        ny = sep.ny;
+        nz = sep.nz;
+      }
+    }
+    if (gap > 0) this.applyPush(nx, ny, nz, gap, kind);
+  }
+
+  private boxPush(
     px: number,
     py: number,
     pz: number,
-    x: number,
-    y: number,
-    z: number,
-    r: number,
-    kind: string,
     body: number,
-  ): void {
-    const dx = px - x;
-    const dy = py - y;
-    const dz = pz - z;
-    const dist = Math.hypot(dx, dy, dz);
-    const min = body + r;
-    const floor = terrainHeight(this.feet.x, this.feet.z);
-    // On the sand, a downward push is undone by the floor clamp and the torso
-    // sinks back into the rock. Slide out across the floor instead.
-    if (this.feet.y <= floor + 0.28 && Math.abs(dy) < min) {
-      const horiz = Math.hypot(dx, dz);
-      const limit = Math.sqrt(Math.max(0, min * min - dy * dy));
-      if (horiz < limit) {
-        const awayX = horiz < 1e-4 ? 1 : dx / horiz;
-        const awayZ = horiz < 1e-4 ? 0 : dz / horiz;
-        const push = limit - horiz;
-        this.feet.x += awayX * push;
-        this.feet.z += awayZ * push;
-        const vn = this.velX * awayX + this.velZ * awayZ;
-        if (vn < 0) {
-          this.velX -= vn * awayX;
-          this.velZ -= vn * awayZ;
-        }
-        if (this.debugOn && !this.pushedKind.has(kind)) {
-          this.pushedKind.add(kind);
-          console.info(`[push] ${kind} dist=${dist.toFixed(2)}`);
-        }
-        return;
+    s: Solid,
+  ): { nx: number; ny: number; nz: number; gap: number } | null {
+    const dx = px - s.x;
+    const dy = py - s.y;
+    const dz = pz - s.z;
+    const lx = dx * s.ax + dy * s.ay + dz * s.az;
+    const ly = dx * s.bx + dy * s.by + dz * s.bz;
+    const lz = dx * s.cx + dy * s.cy + dz * s.cz;
+    const ox = Math.abs(lx) - s.hx;
+    const oy = Math.abs(ly) - s.hy;
+    const oz = Math.abs(lz) - s.hz;
+    const outside = Math.hypot(Math.max(ox, 0), Math.max(oy, 0), Math.max(oz, 0));
+    if (outside >= body && (ox > 0 || oy > 0 || oz > 0)) return null;
+    if (outside > 0) {
+      const cx = Math.max(-s.hx, Math.min(s.hx, lx));
+      const cy = Math.max(-s.hy, Math.min(s.hy, ly));
+      const cz = Math.max(-s.hz, Math.min(s.hz, lz));
+      let nx = px - (s.x + s.ax * cx + s.bx * cy + s.cx * cz);
+      let ny = py - (s.y + s.ay * cx + s.by * cy + s.cy * cz);
+      let nz = pz - (s.z + s.az * cx + s.bz * cy + s.cz * cz);
+      const len = Math.hypot(nx, ny, nz) || 1;
+      nx /= len;
+      ny /= len;
+      nz /= len;
+      return { nx, ny, nz, gap: body - outside };
+    }
+    const penX = s.hx - Math.abs(lx);
+    const penY = s.hy - Math.abs(ly);
+    const penZ = s.hz - Math.abs(lz);
+    let nx = s.ax;
+    let ny = s.ay;
+    let nz = s.az;
+    let pen = penX;
+    let sign = lx >= 0 ? 1 : -1;
+    if (penY < pen) {
+      pen = penY;
+      sign = ly >= 0 ? 1 : -1;
+      nx = s.bx;
+      ny = s.by;
+      nz = s.bz;
+    }
+    if (penZ < pen) {
+      pen = penZ;
+      sign = lz >= 0 ? 1 : -1;
+      nx = s.cx;
+      ny = s.cy;
+      nz = s.cz;
+    }
+    return { nx: nx * sign, ny: ny * sign, nz: nz * sign, gap: pen + body };
+  }
+
+  private pushSphere(x: number, y: number, z: number, r: number, kind: string): void {
+    let gap = 0;
+    let nx = 0;
+    let ny = 0;
+    let nz = 0;
+    for (let i = 0; i < this.bodyPts.length; i++) {
+      const p = this.bodyPts[i];
+      const dx = p.x - x;
+      const dy = p.y - y;
+      const dz = p.z - z;
+      const dist = Math.hypot(dx, dy, dz);
+      const min = p.r + r;
+      if (dist >= min) continue;
+      const len = dist < 1e-4 ? 1 : dist;
+      const need = min - (dist < 1e-4 ? 0 : dist);
+      if (need > gap) {
+        gap = need;
+        nx = (dist < 1e-4 ? 1 : dx) / len;
+        ny = dist < 1e-4 ? 0 : dy / len;
+        nz = dist < 1e-4 ? 0 : dz / len;
       }
     }
-    if (dist >= min) return;
-    let nx = dx;
-    let ny = dy;
-    let nz = dz;
-    if (dist < 1e-4) {
-      nx = min;
-      ny = 0;
-      nz = 0;
+    if (gap > 0) this.applyPush(nx, ny, nz, gap, kind);
+  }
+
+  private applyPush(nx: number, ny: number, nz: number, gap: number, kind: string): void {
+    const floor = terrainHeight(this.feet.x, this.feet.z);
+    if (this.feet.y <= floor + 0.35 && ny < -0.2) {
+      const horiz = Math.hypot(nx, nz);
+      if (horiz > 1e-4) {
+        nx /= horiz;
+        nz /= horiz;
+        ny = 0;
+      } else {
+        nx = 1;
+        ny = 0;
+        nz = 0;
+      }
     }
-    const len = Math.hypot(nx, ny, nz) || 1;
-    nx /= len;
-    ny /= len;
-    nz /= len;
-    const gap = min - (dist < 1e-4 ? 0 : dist);
     this.feet.x += nx * gap;
     this.feet.y += ny * gap;
     this.feet.z += nz * gap;
@@ -895,7 +990,7 @@ export class Game {
     }
     if (this.debugOn && !this.pushedKind.has(kind)) {
       this.pushedKind.add(kind);
-      console.info(`[push] ${kind} dist=${(dist < 1e-4 ? 0 : dist).toFixed(2)}`);
+      console.info(`[push] ${kind} gap=${gap.toFixed(2)}`);
     }
   }
 
@@ -908,7 +1003,8 @@ export class Game {
     this.bodyBelly.crossVectors(this.bodyRight, this.look);
     this.bodyBasis.makeBasis(this.bodyRight, this.look, this.bodyBelly);
     this.diver.quaternion.setFromRotationMatrix(this.bodyBasis);
-    if (kicking) this.diver.rotateX(Math.sin((this.strokePhase % 1) * Math.PI * 2) * (bursting ? 0.1 : 0.07));
+    const wobble = diverStroke(kicking, bursting, this.strokePhase).wobble;
+    if (wobble !== 0) this.diver.rotateX(wobble);
     const back = 0.55;
     this.diver.position.set(
       this.feet.x - this.look.x * back,
@@ -1245,8 +1341,9 @@ export class Game {
       gross = best + rest * BALANCE.otherPhotoPay;
     }
     this.gross = Math.round(gross);
-    this.net = Math.max(0, Math.round(gross - this.fines));
-    this.save.money += this.net;
+    // A fine that exceeds this dive's prize still comes out of the balance.
+    this.net = Math.round(gross - this.fines);
+    this.save.money = Math.max(0, this.save.money + this.net);
     this.save.dives += 1;
     this.save.day += 1;
     this.save.trainsToday = 0;

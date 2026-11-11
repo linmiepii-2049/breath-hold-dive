@@ -206,11 +206,11 @@ button:hover:not(:disabled) { filter: brightness(1.08); }
 .pause h2 { font-size: 40px; margin: 0 0 10px; }
 .pause p { font-size: 20px; color: #f4fffd; line-height: 1.45; }
 
-.sheet { width: min(920px, 100%); }
-.film { display: flex; gap: 10px; overflow: auto; padding-bottom: 8px; }
-.film figure { margin: 0; width: 180px; flex: none; }
-.film img { width: 180px; height: 102px; object-fit: cover; background: #102028; border-radius: 8px; }
-.film figcaption { font-size: 12px; color: var(--dim); margin-top: 4px; }
+.modal .panel.sheet { width: min(1080px, calc(100vw - 48px)); overflow-x: hidden; }
+.film { display: flex; gap: 8px; overflow: visible; padding-bottom: 4px; }
+.film figure { margin: 0; flex: 1 1 0; min-width: 0; width: auto; }
+.film img { width: 100%; height: auto; aspect-ratio: 16/9; object-fit: cover; background: #102028; border-radius: 8px; }
+.film figcaption { font-size: 12px; line-height: 1.35; color: var(--dim); margin-top: 4px; white-space: normal; overflow-wrap: anywhere; }
 
 .card {
   width: min(460px, 92vw);

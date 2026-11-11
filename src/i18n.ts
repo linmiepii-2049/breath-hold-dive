@@ -187,8 +187,8 @@ const STR: Record<string, { zh: string; en: string }> = {
   'judge.net': { zh: '实发', en: 'Paid' },
   'judge.balance': { zh: '余额', en: 'Balance' },
   'judge.note': {
-    zh: '取奖金最高的一张全额，其余按 25% 计。罚款从总额里扣，不会扣成负数。拍到生物的照片仍会留在图鉴里。',
-    en: 'The best frame is paid in full, the rest at 25%. Fines come off the total and cannot drop it below zero. A photo of an animal still enters the album.',
+    zh: '取奖金最高的一张全额，其余按 25% 计。救援和损伤从余额里扣，余额最低为 ¥0。拍到生物的照片仍会留在图鉴里。',
+    en: 'The best frame is paid in full, the rest at 25%. Rescue and damage come off the balance, which cannot fall below ¥0. A photo of an animal still enters the album.',
   },
 
   'cmt.empty': { zh: '画面里没有看清的主体。', en: 'Nothing readable in the frame.' },

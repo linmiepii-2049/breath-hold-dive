@@ -62,14 +62,19 @@ function compositionOf(s: FrameSubject): number {
   const thirdsPts = 12 * (1 - clamp(best / 0.72, 0, 1));
 
   let sizePts: number;
-  if (s.fill < 0.16) sizePts = (s.fill / 0.16) * 10;
-  else if (s.fill <= 0.46) sizePts = 10;
-  else sizePts = 10 * (1 - clamp((s.fill - 0.46) / 0.6, 0, 1));
+  if (s.fill < 0.12) sizePts = (s.fill / 0.12) * 10;
+  else if (s.fill <= 0.5) sizePts = 10;
+  else sizePts = 10 * (1 - clamp((s.fill - 0.5) / 0.55, 0, 1));
 
   const full =
     Math.abs(s.ndcX) + s.radiusNdcX < 0.97 && Math.abs(s.ndcY) + s.radiusNdcY < 0.97;
   const framePts = full ? 8 : 3.5;
-  return clamp(thirdsPts + sizePts + framePts, 0, 30);
+  let raw = thirdsPts + sizePts + framePts;
+  // A readable subject that is already well placed gets the rest of the
+  // composition line, so a common animal can reach the pass. Cropped or
+  // off-center frames do not.
+  if (raw >= 22 && s.fill >= 0.12 && full) raw = 30;
+  return clamp(raw, 0, 30);
 }
 
 function distancePoints(s: FrameSubject): number {
@@ -85,7 +90,7 @@ const ACTION_MOMENT = 10;
 
 function actionWorthy(s: FrameSubject): boolean {
   if (!s.acting || !inFrame(s)) return false;
-  if (s.clarity < 0.62 || s.fill < 0.16) return false;
+  if (s.clarity < 0.62 || s.fill < 0.12) return false;
   return compositionOf(s) >= 12;
 }
 
