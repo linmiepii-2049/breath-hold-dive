@@ -157,14 +157,16 @@ function finishBreath(state: BreathState): void {
 }
 
 export function forceFinishBreath(state: BreathState): void {
-  if (!state.done) finishBreath(state);
+  if (state.done) return;
+  state.done = true;
+  state.accuracy = state.total > 0 ? state.hits / state.total : 0;
+  state.gain = 0;
 }
 
 export function forceFinishApnea(state: ApneaState): void {
   if (state.done) return;
-  const denom = Math.max(6, state.t);
-  state.gain = clamp(state.under / denom, 0, 1) * BALANCE.apneaGain;
   state.done = true;
+  state.gain = 0;
 }
 
 export function stepApnea(state: ApneaState, dt: number, holding: boolean): void {

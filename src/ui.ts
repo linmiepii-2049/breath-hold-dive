@@ -67,6 +67,7 @@ export interface UIModel {
   burstLeft: number;
   burstCd: number;
   sharkThreat: boolean;
+  sharkCharging: boolean;
   toasts: string[];
   flash: number;
   vignette: number;
@@ -392,7 +393,7 @@ export class GameUI {
       <div class="pause" id="pause">
         <div class="panel">
           <h2>${t('hud.pause')}</h2>
-          <p class="dim">${t('hud.pauseHint')}</p>
+          <p class="dim" id="pause-hint"></p>
           <button type="button" class="primary" id="resume">${t('btn.resume')}</button>
         </div>
       </div>`;
@@ -433,7 +434,7 @@ export class GameUI {
           <div>${t('judge.rejected')}</div><div>${rejected}</div>
           <div>${t('judge.gross')}</div><div>¥${m.gross}</div>
           <div>${t('judge.fines')}</div><div>¥${m.fines}</div>
-          <div>${t('judge.net')}</div><div class="net gold">¥${m.net}</div>
+          <div>${t('judge.net')}</div><div class="net gold">¥${Math.max(0, m.net)}</div>
           <div>${t('judge.balance')}</div><div>¥${Math.round(m.money)}</div>
         </div>
         <p class="dim">${t('judge.note')}</p>
@@ -566,7 +567,9 @@ export class GameUI {
     if (stam) stam.style.width = `${Math.max(0, m.stamina)}%`;
     const warn = this.root.querySelector('#warn');
     if (warn) {
+      warn.classList.toggle('charge', m.sharkCharging && !m.atSurface);
       if (m.atSurface) warn.innerHTML = t('hud.surface');
+      else if (m.sharkCharging) warn.textContent = t('hud.sharkCharge');
       else warn.textContent = m.sharkThreat ? t('hud.shark') : m.warnReturn ? t('hud.return') : '';
     }
     const pin = this.root.querySelector('#pin') as HTMLElement | null;
@@ -584,12 +587,15 @@ export class GameUI {
       else if (cooling) burst.textContent = `${t('hud.cooldown')} ${m.burstCd.toFixed(1)}`;
     }
     this.root.querySelector('#pause')?.classList.toggle('on', m.paused);
+    const pauseHint = this.root.querySelector('#pause-hint');
+    if (pauseHint) pauseHint.innerHTML = m.atSurface ? t('hud.pauseHint') : t('hud.pauseSteer');
+    this.root.classList.toggle('charging', m.sharkCharging && !m.atSurface);
     const toast = this.root.querySelector('#toasts');
     if (toast) toast.innerHTML = m.toasts.map((key) => `<div class="toast">${t(key)}</div>`).join('');
     const vig = this.root.querySelector('#vignette') as HTMLElement | null;
     const black = this.root.querySelector('#blackout') as HTMLElement | null;
     const flash = this.root.querySelector('#flash') as HTMLElement | null;
-    if (vig) vig.style.opacity = String(m.vignette);
+    if (vig) vig.style.opacity = String(m.sharkCharging && !m.atSurface ? Math.max(m.vignette, 0.72) : m.vignette);
     if (black) black.style.opacity = String(m.blackout);
     if (flash) flash.style.opacity = String(m.flash);
   }

@@ -135,6 +135,7 @@ const STR: Record<string, { zh: string; en: string }> = {
   'hud.nofocus': { zh: '没有主体', en: 'No subject' },
   'hud.pause': { zh: '暂停', en: 'Paused' },
   'hud.pauseHint': { zh: '点击画面继续转向。按 <kbd>E</kbd> 结束下潜。', en: 'Click to steer again. Press <kbd>E</kbd> to end the dive.' },
+  'hud.pauseSteer': { zh: '点击画面继续转向。', en: 'Click to steer again.' },
 
   'toast.descend': { zh: '正前方外海更深。看向下方，Space 踢下去。', en: 'Open water ahead is deeper. Look down and kick.' },
   'toast.debug': { zh: '已对准。左键拍摄，右键或 Esc 退出取景。', en: 'Lined up. Left click shoots. Right click or Esc leaves the viewfinder.' },
@@ -146,8 +147,10 @@ const STR: Record<string, { zh: string; en: string }> = {
   'toast.kick': { zh: '冲刺', en: 'Kick' },
   'toast.nofilm': { zh: '底片用完了', en: 'Out of film' },
   'toast.sharkNear': { zh: '鲨鱼转过来了', en: 'A shark is turning in.' },
+  'toast.sharkCharge': { zh: '冲过来了！', en: 'It is charging!' },
   'toast.shark': { zh: '被鲨鱼撞到，被迫上浮', en: 'A shark hit you. Forced ascent.' },
   'hud.shark': { zh: '鲨鱼正在靠近', en: 'A shark is closing in' },
+  'hud.sharkCharge': { zh: '冲过来了！', en: 'It is charging!' },
   'hud.sprint': { zh: '冲刺', en: 'Sprint' },
   'hud.cooldown': { zh: '冷却', en: 'Cooldown' },
   'toast.orca': { zh: '被虎鲸带开，被迫上浮', en: 'The orca shoved you. Forced ascent.' },
