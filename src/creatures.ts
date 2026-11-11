@@ -99,7 +99,7 @@ export class OceanLife {
   private orca!: Swimmer;
   private orcaHit = false;
   private orcaTold = false;
-  /** Committed charge ray. The shark does not steer once it starts. */
+  /** Charge aim. Re-aimed every step so a drift is followed; a sprint outruns it. */
   private chargeDir = new Map<Swimmer, { x: number; y: number; z: number; ox: number; oy: number; oz: number }>();
   private baitTold = false;
   private turtleTold = false;
@@ -913,10 +913,18 @@ export class OceanLife {
       return;
     }
     if (s.state === 'charge') {
-      // 2.5 m/s is under the 4.16 m/s sprint. The ray is locked when the circle ends.
+      // 2.5 m/s is under the 4.16 m/s sprint. Steering onto the diver finishes a
+      // sink or a drift. A sprint in any direction opens the gap and the run ends.
       const aim = this.chargeDir.get(s);
       const speed = 2.5;
+      const dx = diver.x - s.x;
+      const dy = diver.y - s.y;
+      const dz = diver.z - s.z;
+      const len = Math.hypot(dx, dy, dz) || 1;
       if (aim) {
+        aim.x = dx / len;
+        aim.y = dy / len;
+        aim.z = dz / len;
         s.x += aim.x * speed * dt;
         s.y += aim.y * speed * dt;
         s.z += aim.z * speed * dt;
@@ -926,18 +934,10 @@ export class OceanLife {
       if (s.y < floor + 1.15) s.y = floor + 1.15;
       s.timer -= dt;
       const now = Math.hypot(s.x - diver.x, s.y - diver.y, s.z - diver.z);
-      let lat = 0;
-      if (aim) {
-        const vx = diver.x - aim.ox;
-        const vy = diver.y - aim.oy;
-        const vz = diver.z - aim.oz;
-        const along = vx * aim.x + vy * aim.y + vz * aim.z;
-        lat = Math.hypot(vx - aim.x * along, vy - aim.y * along, vz - aim.z * along);
-      }
       if (now < 2.2) {
         this.setShark(s, 'retreat', now, 4.5);
         out.hit = out.hit ?? 'shark';
-      } else if (s.timer <= 0 || now > 14 || lat > 3.2) {
+      } else if (s.timer <= 0 || now > 14) {
         this.setShark(s, 'patrol', now, 12);
       }
       return;

@@ -279,7 +279,7 @@ function buildReef(solids: Solid[]): Mesh {
         color: rockColor,
       });
       // Unit icosahedron has radius 1, so the mesh reaches the largest scale.
-      solids.push({ x: px, y: py, z: pz, r: Math.max(sx, 0.55, 0.7) + 0.75 });
+      solids.push({ x: px, y: py, z: pz, r: Math.max(sx, 0.55, 0.7) + 0.28 });
     }
   }
   for (let i = 0; i < 26; i++) {
@@ -294,7 +294,7 @@ function buildReef(solids: Solid[]): Mesh {
       matrix: M(x, py, z, rand(), rand() * 4, rand() * 0.4, s, s * 0.7, s),
       color: new Color(0x4e656c).offsetHSL(0, 0, (rand() - 0.5) * 0.06),
     });
-    if (s >= 0.72) solids.push({ x, y: py, z, r: s + 0.75 });
+    if (s >= 0.72) solids.push({ x, y: py, z, r: s + 0.28 });
   }
   const geo = mergeParts(parts);
   const mat = new MeshLambertMaterial({ vertexColors: true, flatShading: true });
@@ -317,7 +317,7 @@ function buildWall(solids: Solid[]): Mesh {
       color: new Color(0x3e5560).offsetHSL(0, 0, (rand() - 0.5) * 0.05),
     });
     // The mesh is s wide and 2h tall. One undersized sphere left the torso in the rock.
-    const r = Math.max(s, s * 0.8) + 0.75;
+    const r = Math.max(s, s * 0.8) + 0.28;
     const bottom = py - h + r;
     const top = py + h - r;
     const step = Math.max(0.9, r * 0.85);
