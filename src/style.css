@@ -180,10 +180,14 @@ button:hover:not(:disabled) { filter: brightness(1.08); }
 #flash { background: white; }
 
 .pause {
-  display: none; position: absolute; inset: 0; background: rgba(2, 8, 12, 0.55);
+  display: none; position: absolute; inset: 0; z-index: 8;
+  background: rgba(2, 8, 12, 0.78);
   align-items: center; justify-content: center;
 }
 .pause.on { display: flex; }
+.pause .panel { width: min(460px, calc(100% - 40px)); text-align: center; padding: 28px 22px; }
+.pause h2 { font-size: 40px; margin: 0 0 10px; }
+.pause p { font-size: 20px; color: #f4fffd; line-height: 1.45; }
 .end { display: none; margin: 10px auto 0; }
 .end.on { display: block; }
 
