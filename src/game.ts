@@ -80,7 +80,10 @@ export class Game {
   private cam: PerspectiveCamera;
   private fpCam: PerspectiveCamera;
   private diver: ReturnType<typeof makeDiver>;
-  private fillLight = new PointLight(0xe7fff6, 3.2, 16, 1);
+  private fillLight = new PointLight(0xe7fff6, 5.2, 24, 1);
+  private nearLight = new PointLight(0xd7fff2, 2.6, 12, 1);
+  private forceLow = false;
+  private linedUp = false;
   private shadow: Mesh;
   private shotRts: WebGLRenderTarget[] = [];
   private shotRtBusy: boolean[] = [];
@@ -223,6 +226,7 @@ export class Game {
     tintDiver(this.diver, this.save.gear.suit, this.save.gear.fins);
     this.scene.add(this.diver);
     this.scene.add(this.fillLight);
+    this.scene.add(this.nearLight);
     this.shadow = new Mesh(
       new CircleGeometry(0.7, 14),
       new MeshBasicMaterial({ color: 0x021016, transparent: true, opacity: 0.28, depthWrite: false }),
@@ -238,6 +242,13 @@ export class Game {
 
     const params = new URLSearchParams(location.search);
     this.fpsOn = params.get('fps') === '1';
+    this.forceLow = params.get('quality') === 'low';
+    if (this.forceLow) {
+      this.renderScale = this.minRenderScale();
+      this.lowTier = true;
+      this.applyPixelRatio();
+      this.world.setDetail(false);
+    }
     this.debugOn = params.get('debug') === '1';
     this.life.setDebug(this.debugOn);
     if (this.debugOn) {
@@ -565,9 +576,13 @@ export class Game {
         this.placeDiverShore();
       }
       this.refreshAim();
+      if (this.linedUp) {
+        this.linedUp = false;
+        if (this.aimNow?.subject) this.pushToast(this.touch ? 'toast.debugTouch' : 'toast.debug');
+      }
       if (diving && this.viewfinder && this.lmb && this.aimNow) this.shoot(this.aimNow.score);
       const depth = this.mode === 'dive' ? depthMeters(this.feet.y) : 0;
-      this.world.update(this.time, this.cam.position.y, depth);
+      this.world.update(this.time, this.cam.position.y, depth, this.feet.x, this.feet.y + 1, this.feet.z);
       moveSnell(this.world.snell, this.cam.position.x, this.cam.position.z);
       if (this.debugOn && this.mode === 'dive') {
         this.debugLogT += dt;
@@ -626,10 +641,11 @@ export class Game {
 
     const renderCam = this.mode === 'dive' && this.viewfinder ? this.fpCam : this.cam;
     this.fillLight.position.set(
-      this.feet.x * 0.4 + renderCam.position.x * 0.6,
-      this.feet.y + 1.15,
-      this.feet.z * 0.4 + renderCam.position.z * 0.6,
+      this.feet.x * 0.35 + renderCam.position.x * 0.65,
+      this.feet.y + 1.2,
+      this.feet.z * 0.35 + renderCam.position.z * 0.65,
     );
+    this.nearLight.position.set(this.feet.x, this.feet.y + 2.3, this.feet.z);
     try {
       this.renderer.render(this.scene, renderCam);
     } catch (err) {
@@ -1378,7 +1394,7 @@ export class Game {
     this.viewfinder = true;
     this.suppressToggleUntil = performance.now() + 600;
     this.snapFollow();
-    this.pushToast(this.touch ? 'toast.debugTouch' : 'toast.debug');
+    this.linedUp = true;
   }
 
   /** Drop the tank to about 3% so a reviewer can reach blackout. Drain rates stay the same. */
@@ -1962,6 +1978,18 @@ export class Game {
     this.fpCam.updateProjectionMatrix();
   };
 
+  /**
+   * Drawing-buffer floor. At least 0.6 of the CSS size, and at least 640px wide
+   * when the screen is wider than that. Cost is cut in the low tier instead of
+   * going smaller than this.
+   */
+  private minRenderScale(): number {
+    const w = Math.max(1, window.innerWidth);
+    const cap = Math.min(window.devicePixelRatio || 1, 1.5);
+    const want = Math.max(w * 0.6, Math.min(w, 640));
+    return Math.min(1, want / (w * cap));
+  }
+
   /** Touch stays at 1.5 or below. The scale then drops on a GPU that cannot hold 40 fps. */
   private applyPixelRatio(): void {
     const cap = Math.min(window.devicePixelRatio || 1, 1.5);
@@ -1971,6 +1999,15 @@ export class Game {
 
   /** Step the resolution down while frames stay slow, and ease it back when they recover. */
   private adaptQuality(): void {
+    if (this.forceLow) {
+      const floor = this.minRenderScale();
+      if (this.renderScale === floor && this.lowTier) return;
+      this.renderScale = floor;
+      this.lowTier = true;
+      this.applyPixelRatio();
+      this.world.setDetail(false);
+      return;
+    }
     const fps = this.fpsShown;
     if (fps <= 0) return;
     if (fps < 40) {
@@ -1983,9 +2020,10 @@ export class Game {
       this.qualityLow = 0;
       this.qualityHigh = 0;
     }
+    const floor = this.minRenderScale();
     let next = this.renderScale;
-    if (this.qualityLow >= 0.5 && this.renderScale > 0.35) {
-      next = Math.max(0.35, Math.round((this.renderScale - 0.12) * 100) / 100);
+    if (this.qualityLow >= 0.5 && this.renderScale > floor + 0.01) {
+      next = Math.max(floor, Math.round((this.renderScale - 0.12) * 100) / 100);
       this.qualityLow = 0;
     } else if (this.qualityHigh >= 1.5 && this.renderScale < 1) {
       next = Math.min(1, Math.round((this.renderScale + 0.08) * 100) / 100);

@@ -31,7 +31,7 @@ import { terrainHeight } from './terrain';
 import { rng } from './util';
 
 export const LANDMARKS = {
-  anemone: { x: -6, z: 13 },
+  anemone: { x: -3, z: 17.2 },
   octopus: { x: -8.4, z: 26 },
   bait: { x: 1.5, z: 32 },
 };
@@ -68,7 +68,7 @@ export interface World {
   hemi: import('three').HemisphereLight;
   sun: import('three').DirectionalLight;
   solids: Solid[];
-  update(time: number, camY: number, diverDepth: number): void;
+  update(time: number, camY: number, diverDepth: number, diverX?: number, diverY?: number, diverZ?: number): void;
   /** Full detail draws light shafts. The low tier hides them and eases the fog. */
   setDetail(full: boolean): void;
 }
@@ -165,18 +165,19 @@ export function createWorld(): World {
     hemi,
     sun,
     solids,
-    update(time, camY, diverDepth) {
+    update(time, camY, diverDepth, diverX = 0, diverY = -diverDepth, diverZ = 0) {
       const diveT = Math.min(1, diverDepth / 42);
       const under = Math.min(1, Math.max(0, (0.4 - camY) / 4));
       const waterMix = Math.max(under, diveT * 0.85);
-      fog.color.copy(air).lerp(shallow, Math.min(1, waterMix * 1.15)).lerp(deep, diveT * 0.62);
-      const haze = 0.006 + waterMix * 0.007 + diveT * 0.016;
-      // Near field (about 8 m) stays readable on every tier. The low tier is thinner still.
-      fog.density = Math.min(detail ? 0.03 : 0.018, detail ? haze : haze * 0.7);
-      hemi.intensity = 1.05 - diveT * 0.15;
-      sun.intensity = 1.4 - diveT * 0.2;
-      const mat = floor.material as ShaderMaterial;
-      mat.uniforms.uTime.value = time;
+      fog.color.copy(air).lerp(shallow, Math.min(1, waterMix * 1.05)).lerp(deep, diveT * 0.38);
+      const haze = 0.004 + waterMix * 0.004 + diveT * 0.007;
+      // Within about 8 m the water stays readable on every tier. The low tier is thinner.
+      fog.density = Math.min(detail ? 0.018 : 0.011, haze);
+      hemi.intensity = 1.08 - diveT * 0.08;
+      sun.intensity = 1.35 - diveT * 0.1;
+      const floorMat = floor.material as ShaderMaterial;
+      floorMat.uniforms.uNear.value.set(diverX, diverY, diverZ);
+      floorMat.uniforms.uTime.value = time;
       waterMat.opacity = camY > 0.4 ? 0.3 : 0.55;
       snell.visible = camY < 0.2;
 
@@ -205,6 +206,12 @@ export function createWorld(): World {
       shafts.forEach((m) => {
         m.visible = full;
       });
+      kelp.forEach((m, i) => {
+        m.visible = full || i % 3 === 0;
+      });
+      fans.forEach((m, i) => {
+        m.visible = full || i % 2 === 0;
+      });
     },
   };
 }
@@ -212,8 +219,8 @@ export function createWorld(): World {
 /** Gold beads down the offshore lane, so the trench mouth is a line you can follow. */
 function buildTrenchGuide(): Group {
   const g = new Group();
-  const mat = new MeshBasicMaterial({ color: 0xffe08a });
-  const bead = new SphereGeometry(0.2, 8, 6);
+  const mat = new MeshBasicMaterial({ color: 0xffb000, fog: false });
+  const bead = new SphereGeometry(0.26, 8, 6);
   for (let z = 22; z <= 62; z += 4) {
     const x = 7.2 + (z - 22) * 0.15;
     const y = terrainHeight(x, z) + 1.7;
@@ -241,7 +248,7 @@ function buildFloor(): Mesh {
   }
   geo.computeVertexNormals();
   const mat = new ShaderMaterial({
-    uniforms: UniformsUtils.merge([UniformsLib.fog, { uTime: { value: 0 } }]),
+    uniforms: UniformsUtils.merge([UniformsLib.fog, { uTime: { value: 0 }, uNear: { value: new Vector3() } }]),
     fog: true,
     vertexShader: `
       varying vec3 vWorld;
@@ -260,6 +267,7 @@ function buildFloor(): Mesh {
       varying vec3 vWorld;
       varying vec3 vNormalW;
       uniform float uTime;
+      uniform vec3 uNear;
       #include <fog_pars_fragment>
       void main() {
         float flatN = clamp(vNormalW.y, 0.0, 1.0);
@@ -268,16 +276,19 @@ function buildFloor(): Mesh {
         vec3 base = mix(rock, sand, smoothstep(0.58, 0.92, flatN));
         float deepT = clamp((-vWorld.y - 8.0) / 36.0, 0.0, 1.0);
         deepT = deepT * deepT * (3.0 - 2.0 * deepT);
-        base = mix(base, vec3(0.2, 0.38, 0.42), deepT * 0.55);
+        base = mix(base, vec3(0.28, 0.46, 0.48), deepT * 0.32);
         float n1 = sin(vWorld.x * 0.45 + uTime * 0.85) * sin(vWorld.z * 0.38 - uTime * 0.65);
         float n2 = sin(vWorld.x * 0.2 - uTime * 0.4 + vWorld.z * 0.17);
         float ca = smoothstep(0.4, 1.3, n1 + n2);
-        float shallow = 1.0 - clamp((-vWorld.y - 6.0) / 22.0, 0.0, 1.0);
+        float shallow = 1.0 - clamp((-vWorld.y - 6.0) / 28.0, 0.0, 1.0);
         ca *= shallow * flatN;
         vec3 sunDir = normalize(vec3(-0.28, 0.92, 0.25));
         float lam = clamp(dot(normalize(vNormalW), sunDir), 0.0, 1.0);
-        vec3 col = base * (0.48 + 0.7 * lam) + vec3(0.55, 0.75, 0.68) * ca * 1.15;
-        col *= mix(1.0, 0.82, deepT);
+        vec3 col = base * (0.55 + 0.62 * lam) + vec3(0.55, 0.75, 0.68) * ca * 1.15;
+        col *= mix(1.0, 0.9, deepT);
+        float nearD = distance(vWorld, uNear);
+        float nearK = 1.0 - smoothstep(2.5, 9.0, nearD);
+        col += vec3(0.08, 0.11, 0.09) * nearK;
         gl_FragColor = vec4(col, 1.0);
         #include <fog_fragment>
       }

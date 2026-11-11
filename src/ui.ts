@@ -705,7 +705,7 @@ export class GameUI {
     const vig = this.root.querySelector('#vignette') as HTMLElement | null;
     const black = this.root.querySelector('#blackout') as HTMLElement | null;
     const flash = this.root.querySelector('#flash') as HTMLElement | null;
-    if (vig) vig.style.opacity = String(m.sharkCharging ? Math.max(m.vignette, 0.72) : m.vignette);
+    if (vig) vig.style.opacity = String(m.sharkCharging ? Math.max(m.vignette, 0.38) : m.vignette);
     if (black) black.style.opacity = String(m.blackout);
     if (flash) flash.style.opacity = String(m.flash);
   }

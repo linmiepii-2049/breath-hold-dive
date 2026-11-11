@@ -108,6 +108,8 @@ export class OceanLife {
   private sharkA!: Swimmer;
   private turtleA!: Swimmer;
   private orca!: Swimmer;
+  private turtleAimX = 4;
+  private turtleAimZ = 16;
   private orcaHit = false;
   private orcaTold = false;
   /** Charge aim. `min` is the closest gap so far, kept for the log. */
@@ -643,7 +645,7 @@ export class OceanLife {
     }
 
     // Off the spawn lane (x ≈ 0–14, z ≈ 8–48) for the first 20 s. The reef shark
-    // swims about 3–16 m: a midwater pass at 3 m, then the wall around 9–16 m.
+    // swims about 3–19 m: a midwater pass at 3 m, then the wall, down to about 19 m.
     // The trench shark rides the deep pocket (about x 4–24, z 50–76), from
     // roughly 27 m down to the floor near 41 m. A diver at 30 m or 36 m in that
     // pocket is on the route. Neither shark covers the whole map.
@@ -846,12 +848,13 @@ export class OceanLife {
       const oz = s.prevZ;
       const hadPrev = ox !== undefined && oy !== undefined && oz !== undefined;
       if (s.species === 'clownfish') {
-        const anchorY = terrainHeight(LANDMARKS.anemone.x, LANDMARKS.anemone.z) + 0.85;
-        const ang = this.t * 0.85 + s.phase;
-        s.x = LANDMARKS.anemone.x + Math.cos(ang) * (0.55 + s.wp * 0.18);
-        s.z = LANDMARKS.anemone.z + Math.sin(ang * 1.3) * 0.7;
-        s.y = anchorY + Math.sin(this.t * 2 + s.phase) * 0.2;
-        s.yaw = ang + Math.PI / 2;
+        const anchorY = terrainHeight(LANDMARKS.anemone.x, LANDMARKS.anemone.z) + 1.05;
+        const w = this.t * 1.55 + s.phase;
+        const rad = 0.9 + (s.wp % 3) * 0.22;
+        s.x = LANDMARKS.anemone.x + Math.cos(w) * rad;
+        s.z = LANDMARKS.anemone.z + Math.sin(w) * rad * 0.82;
+        s.y = anchorY + Math.sin(w * 2) * 0.22;
+        s.yaw = w + Math.PI / 2;
       } else if (s.species === 'parrotfish') {
         this.followWp(s, dt, 1.3);
         const floor = terrainHeight(s.x, s.z);
@@ -903,16 +906,30 @@ export class OceanLife {
       const floor = terrainHeight(s.x, s.z);
       s.y += (Math.max(floor + 2.2, -9) - s.y) * Math.min(1, dt);
       s.timer -= dt;
-      if (s.timer <= 0) s.state = 'up';
+      if (s.timer <= 0) {
+        s.state = 'up';
+        this.turtleAimX = diver.x + 2.6;
+        this.turtleAimZ = diver.z + 3.8;
+      }
     } else if (s.state === 'up') {
-      s.y += 2.15 * dt;
-      s.yaw += dt * 0.15;
-      if (s.y > -0.7) {
+      const dx = this.turtleAimX - s.x;
+      const dz = this.turtleAimZ - s.z;
+      const horiz = Math.hypot(dx, dz);
+      if (horiz > 0.5) {
+        const step = Math.min(horiz, 2.4 * dt);
+        s.x += (dx / horiz) * step;
+        s.z += (dz / horiz) * step;
+        s.yaw = Math.atan2(dx, dz);
+      }
+      if (horiz < 6) s.y += 0.8 * dt;
+      if (s.y > -0.7 && horiz < 6) {
         s.state = 'breathe';
-        s.timer = 6.5;
+        s.timer = 10;
         s.y = -0.55;
       }
     } else if (s.state === 'breathe') {
+      s.x = this.turtleAimX + Math.sin(this.t * 0.7) * 0.45;
+      s.z = this.turtleAimZ + Math.cos(this.t * 0.45) * 0.3;
       s.y = -0.5 + Math.sin(this.t * 1.5) * 0.06;
       s.timer -= dt;
       if (s.timer <= 0) s.state = 'down';
@@ -953,9 +970,28 @@ export class OceanLife {
     const a = this.orbitAnchor.get(s);
     if (!a) return;
     a.ang += dt * (3.4 / Math.max(6, a.radius));
-    s.x = a.x + Math.cos(a.ang) * a.radius;
-    s.z = a.z + Math.sin(a.ang) * a.radius;
-    const floor = terrainHeight(s.x, s.z);
+    // A ring point on a shelf would lift the shark out of a deep pocket and
+    // make the warning look like the diver got away. Stay at the diver's depth.
+    let x = a.x + Math.cos(a.ang) * a.radius;
+    let z = a.z + Math.sin(a.ang) * a.radius;
+    let floor = terrainHeight(x, z);
+    if (floor + 1.2 > a.y + 2.2) {
+      for (let k = 1; k <= 6; k++) {
+        const ang = a.ang + k * 0.55;
+        const rad = a.radius * (k < 4 ? 1 : 0.62);
+        const tx = a.x + Math.cos(ang) * rad;
+        const tz = a.z + Math.sin(ang) * rad;
+        const tf = terrainHeight(tx, tz);
+        if (tf + 1.2 <= a.y + 2.2) {
+          x = tx;
+          z = tz;
+          floor = tf;
+          break;
+        }
+      }
+    }
+    s.x = x;
+    s.z = z;
     const bob = Math.sin(this.t * 1.4) * 0.28;
     s.y = Math.min(-1.7, Math.max(floor + 1.2, a.y + bob));
     s.yaw = Math.atan2(a.x - s.x, a.z - s.z);
@@ -1009,16 +1045,18 @@ export class OceanLife {
       s.timer -= dt;
       this.holdCircle(s, dt);
       const now = Math.hypot(s.x - diver.x, s.y - diver.y, s.z - diver.z);
+      const horizNow = Math.hypot(s.x - diver.x, s.z - diver.z);
       const anchor = this.orbitAnchor.get(s);
-      const moved = anchor
-        ? Math.hypot(diver.x - anchor.x, diver.y - anchor.y, diver.z - anchor.z)
-        : 0;
-      // The ring stays put. A sprint leaves it; a buoyancy drift does not.
-      const fled = this.diverSprinting() || moved > 2.05 || now > 13.5;
+      const moved = anchor ? Math.hypot(diver.x - anchor.x, diver.z - anchor.z) : 0;
+      // Horizontal only. A floor that lifts the shark must not count as the diver fleeing.
+      const fled = this.diverSprinting() || moved > 2.05 || horizNow > 16;
       if (fled) {
+        if (this.sharkLog) {
+          console.info(`[shark] warn abort sprint=${this.diverSprinting()} moved=${moved.toFixed(1)} horiz=${horizNow.toFixed(1)}`);
+        }
         this.setShark(s, 'patrol', now, 11);
       } else if (s.timer <= 0) {
-        if (now <= 12.2) {
+        if (horizNow <= 14) {
           this.commitCharge(s, now);
           out.sharkCharge = true;
           out.sharkCharging = true;
@@ -1028,51 +1066,82 @@ export class OceanLife {
     }
     if (s.state === 'charge') {
       // Horizontal speed stays full even when the floor throws away the vertical
-      // part of a 3D step. A rising diver is still closed on in a few seconds.
-      // If the gap stops shrinking, the charge ends and the cue comes down.
+      // part of a 3D step. A diver sitting on the trench floor is still closed on.
       const aim = this.chargeDir.get(s);
       const speed = 3.6;
       const dx = diver.x - s.x;
       const dy = diver.y - s.y;
       const dz = diver.z - s.z;
       const horiz = Math.hypot(dx, dz) || 1;
-      s.x += (dx / horiz) * speed * dt;
-      s.z += (dz / horiz) * speed * dt;
-      s.y += Math.sign(dy) * Math.min(speed * dt, Math.abs(dy));
+      let floor = terrainHeight(s.x, s.z);
+      const blocked = floor + 1.15 > diver.y + 2.5 && horiz < 10;
+      if (blocked) {
+        let bestX = 0;
+        let bestZ = 0;
+        let bestF = floor;
+        for (const [ox, oz] of [
+          [5, 0],
+          [-5, 0],
+          [0, 5],
+          [0, -5],
+          [4, 4],
+          [-4, 4],
+          [4, -4],
+          [-4, -4],
+        ]) {
+          const f = terrainHeight(s.x + ox, s.z + oz);
+          if (f < bestF) {
+            bestF = f;
+            bestX = ox;
+            bestZ = oz;
+          }
+        }
+        const step = Math.hypot(bestX, bestZ) || 1;
+        s.x += (bestX / step) * speed * dt;
+        s.z += (bestZ / step) * speed * dt;
+      } else if (horiz > 0.35) {
+        s.x += (dx / horiz) * speed * dt;
+        s.z += (dz / horiz) * speed * dt;
+      }
+      floor = terrainHeight(s.x, s.z);
+      const room = floor + 1.15;
+      if (!blocked) s.y += Math.sign(dy) * Math.min(speed * dt, Math.abs(dy));
+      if (s.y < room) s.y = room;
+      if (s.y > -0.85) s.y = -0.85;
       s.yaw = Math.atan2(dx, dz);
       if (aim) {
         aim.x = dx / horiz;
         aim.y = Math.sign(dy);
         aim.z = dz / horiz;
       }
-      const floor = terrainHeight(s.x, s.z);
-      if (s.y < floor + 1.15) s.y = floor + 1.15;
-      if (s.y > -0.85) s.y = -0.85;
       s.timer -= dt;
       const now = Math.hypot(s.x - diver.x, s.y - diver.y, s.z - diver.z);
+      const horizLeft = Math.hypot(s.x - diver.x, s.z - diver.z);
       if (aim) {
-        if (now < aim.min - 0.04) {
-          aim.min = now;
+        if (now < aim.min - 0.04 || horizLeft < horiz - 0.05) {
+          aim.min = Math.min(aim.min, now);
           aim.stall = 0;
         } else aim.stall += dt;
       }
-      const stalled = !!aim && aim.stall > 1.5 && now > 2.2;
+      const stalled = !!aim && aim.stall > 2.2 && now > 2.2 && horizLeft > 3;
       if (now < 2.2) {
         this.setShark(s, 'retreat', now, 4.5);
         out.hit = out.hit ?? 'shark';
-      } else if (this.diverSprinting() || s.timer <= 0 || now > 18 || stalled) {
+      } else if (this.diverSprinting() || s.timer <= 0 || now > 22 || stalled) {
         this.setShark(s, 'patrol', now, 12);
       }
       return;
     }
+    const horizDist = Math.hypot(s.x - diver.x, s.z - diver.z);
+    const vertDist = Math.abs(s.y - diver.y);
     // Warn only when a charge from here can still catch a diver who does not move.
-    if (aggro && !this.calmSpawn() && s.timer <= 0 && dist < 11.2 && !surfaced) {
+    if (aggro && !this.calmSpawn() && s.timer <= 0 && horizDist < 11.2 && vertDist < 18 && !surfaced) {
       const ang = Math.atan2(s.z - diver.z, s.x - diver.x);
       this.orbitAnchor.set(s, {
         x: diver.x,
         y: diver.y,
         z: diver.z,
-        radius: clamp(dist, 6.2, 11.2),
+        radius: clamp(horizDist, 6.2, 11.2),
         ang,
       });
       this.setShark(s, 'warn', dist, 1.05);
