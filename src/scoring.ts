@@ -16,6 +16,8 @@ export interface FrameSubject {
   optimal: number;
   moment: MomentId | null;
   dangerous: boolean;
+  /** Swimming, turning, feeding, or otherwise acting. Idle drifting is false. */
+  acting: boolean;
   /** 1 = unobstructed and not lost in haze. */
   clarity: number;
 }
@@ -34,6 +36,8 @@ export interface ScoreBreakdown {
   total: number;
   species: SpeciesId | null;
   momentId: MomentId | null;
+  /** Why the moment line scored. `action` is the base for a clear moving subject. */
+  momentNote: 'none' | 'action' | 'special';
   comment: CommentId;
   prize: number;
 }
@@ -74,6 +78,15 @@ function distancePoints(s: FrameSubject): number {
   if (ratio <= 1.35) return 10;
   if (ratio < 2.5) return 10 * (1 - (ratio - 1.35) / 1.15);
   return 1.5;
+}
+
+/** A clear, framed shot of a creature that is actually doing something. */
+const ACTION_MOMENT = 10;
+
+function actionWorthy(s: FrameSubject): boolean {
+  if (!s.acting || !inFrame(s)) return false;
+  if (s.clarity < 0.62 || s.fill < 0.16) return false;
+  return compositionOf(s) >= 12;
 }
 
 /** The moment animal has to be plainly in the picture, not a speck, a haze blob, or a shape behind weed. */
@@ -121,6 +134,7 @@ export function scoreFrame(input: ScoreInput): ScoreBreakdown {
       total: 0,
       species: null,
       momentId: null,
+      momentNote: 'none',
       comment: 'empty',
       prize: 0,
     };
@@ -136,6 +150,7 @@ export function scoreFrame(input: ScoreInput): ScoreBreakdown {
   let moment = 0;
   let momentId: MomentId | null = null;
   let momentFill = -1;
+  let momentNote: ScoreBreakdown['momentNote'] = 'none';
   for (const s of input.subjects) {
     if (!momentWorthy(s) || !s.moment) continue;
     const pts = s.fill >= 0.22 && compositionOf(s) >= 8 ? 25 : 12;
@@ -143,7 +158,13 @@ export function scoreFrame(input: ScoreInput): ScoreBreakdown {
       moment = pts;
       momentId = s.moment;
       momentFill = s.fill;
+      momentNote = 'special';
     }
+  }
+  if (moment < ACTION_MOMENT && actionWorthy(best)) {
+    moment = ACTION_MOMENT;
+    momentId = null;
+    momentNote = 'action';
   }
 
   const distPart = distancePoints(best);
@@ -174,6 +195,7 @@ export function scoreFrame(input: ScoreInput): ScoreBreakdown {
     total,
     species: best.species,
     momentId,
+    momentNote,
     comment,
     prize: prizeForScore(total),
   };

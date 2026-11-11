@@ -428,7 +428,7 @@ export class Game {
     }
 
     const stepping = !(this.mode === 'dive' && this.paused);
-    if (stepping && this.mode === 'dive' && !this.wantJudge) this.applyLook();
+      if (stepping && this.mode === 'dive' && !this.wantJudge) this.applyLook(frameDt);
     if (stepping) {
       this.accum += frameDt;
       const step = 1 / 60;
@@ -508,6 +508,7 @@ export class Game {
           }
           let rockD = 99;
           let rockR = 0;
+          let rockAt = '0,0,0';
           const solids = this.world.solids;
           for (let i = 0; i < solids.length; i++) {
             const s = solids[i];
@@ -515,6 +516,7 @@ export class Game {
             if (d < rockD) {
               rockD = d;
               rockR = s.r;
+              rockAt = `${s.x.toFixed(2)},${s.y.toFixed(2)},${s.z.toFixed(2)}`;
             }
           }
           const camDx = this.cam.position.x - this.feet.x;
@@ -522,7 +524,7 @@ export class Game {
           const camDz = this.cam.position.z - this.feet.z;
           const elev = (Math.atan2(camDy, Math.hypot(camDx, camDz)) * 180) / Math.PI;
           console.info(
-            `[dive] x=${this.feet.x.toFixed(2)} y=${this.feet.y.toFixed(2)} z=${this.feet.z.toFixed(2)} depth=${depth.toFixed(2)} yaw=${this.viewYaw.toFixed(2)} pitch=${this.viewPitch.toFixed(2)} near=${nearKind}:${near.toFixed(1)} at=${nearAt} rock=${rockD.toFixed(2)}/${rockR.toFixed(2)} cam=${elev.toFixed(1)}`,
+            `[dive] x=${this.feet.x.toFixed(2)} y=${this.feet.y.toFixed(2)} z=${this.feet.z.toFixed(2)} depth=${depth.toFixed(2)} yaw=${this.viewYaw.toFixed(2)} pitch=${this.viewPitch.toFixed(2)} near=${nearKind}:${near.toFixed(1)} at=${nearAt} rock=${rockD.toFixed(2)}/${rockR.toFixed(2)}@${rockAt} cam=${elev.toFixed(1)}`,
           );
         }
       }
@@ -611,12 +613,13 @@ export class Game {
     this.placeShadow();
   }
 
-  /** Mouse up looks up. Mouse right turns right. Same with the viewfinder open or closed. */
-  private applyLook(): void {
+  /** Mouse up looks up. Mouse right turns right. The clamp is a rate, so 15 FPS turns as far per second as 60. */
+  private applyLook(frameDt: number): void {
     if (!document.pointerLockElement) return;
     const sens = this.save.lookSens;
-    const lookX = clamp(this.mouseDX, -80, 80);
-    const lookY = clamp(this.mouseDY, -60, 60);
+    const frames = Math.max(1, frameDt / (1 / 60));
+    const lookX = clamp(this.mouseDX, -80 * frames, 80 * frames);
+    const lookY = clamp(this.mouseDY, -60 * frames, 60 * frames);
     this.viewYaw -= lookX * BALANCE.lookYaw * sens;
     this.viewPitch -= lookY * BALANCE.lookPitch * sens;
     this.viewPitch = clamp(this.viewPitch, -BALANCE.pitchLimit, BALANCE.pitchLimit);
@@ -747,11 +750,19 @@ export class Game {
     for (let i = 0; i < along.length; i++) {
       const t = along[i];
       const px = this.feet.x + lx * t;
-      const py = this.feet.y + 0.4 + ly * t;
+      const py = this.feet.y + 0.42 + ly * t;
       const pz = this.feet.z + lz * t;
-      this.pushOut(px, py, pz, x, y, z, r, kind, 0.46);
-      this.pushOut(px + bx * 0.22, py + by * 0.22, pz + bz * 0.22, x, y, z, r, kind, 0.32);
+      this.pushOut(px, py, pz, x, y, z, r, kind, 0.62);
+      this.pushOut(px + rx * 0.3, py, pz + rz * 0.3, x, y, z, r, kind, 0.42);
+      this.pushOut(px - rx * 0.3, py, pz - rz * 0.3, x, y, z, r, kind, 0.42);
+      this.pushOut(px + bx * 0.45, py + by * 0.45, pz + bz * 0.45, x, y, z, r, kind, 0.4);
     }
+    // Fins sit behind the chest, along the belly. Sample them or they sit in the mesh.
+    const tx = this.feet.x - lx * 0.4;
+    const ty = this.feet.y + 0.42 - ly * 0.4;
+    const tz = this.feet.z - lz * 0.4;
+    this.pushOut(tx + bx * 0.5, ty + by * 0.5, tz + bz * 0.5, x, y, z, r, kind, 0.42);
+    this.pushOut(tx, ty, tz, x, y, z, r, kind, 0.4);
   }
 
   private pushOut(
@@ -1009,6 +1020,7 @@ export class Game {
         optimal: s.optimal,
         moment: s.moment,
         dangerous: s.dangerous,
+        acting: s.acting,
         clarity,
       });
     }

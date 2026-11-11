@@ -19,6 +19,7 @@ function subject(partial: Partial<FrameSubject> & Pick<FrameSubject, 'species' |
     moment: null,
     dangerous: false,
     clarity: 1,
+    acting: false,
     ...partial,
   };
 }
@@ -33,8 +34,8 @@ const turtle = scoreFrame({
 });
 assert(turtle.composition >= 24, `turtle composition ${turtle.composition}`);
 assert(turtle.rarity === 16, 'turtle rarity');
-assert(turtle.moment === 0, 'turtle has no moment');
-assert(turtle.total > 40 && turtle.total < 80, `turtle total ${turtle.total}`);
+assert(turtle.moment === 0 && turtle.momentNote === 'none', 'an idle turtle has no moment');
+assert(turtle.total > 40 && turtle.total < 60, `idle turtle stays under 60 (${turtle.total})`);
 
 const turtleMoment = scoreFrame({
   subjects: [subject({ species: 'turtle', rarity: 16, moment: 'turtleBreath' })],
@@ -44,6 +45,71 @@ const turtleMoment = scoreFrame({
 assert(turtleMoment.moment === 25, `moment points ${turtleMoment.moment}`);
 assert(turtleMoment.total > turtle.total, 'moment should outscore the plain turtle');
 assert(turtleMoment.comment === 'moment', turtleMoment.comment);
+
+const actingTurtle = scoreFrame({
+  subjects: [subject({ species: 'turtle', rarity: 16, acting: true })],
+  depth: 8,
+  nearestPredator: 30,
+});
+assert(actingTurtle.moment === 10 && actingTurtle.momentNote === 'action', `action moment ${actingTurtle.moment} ${actingTurtle.momentNote}`);
+assert(actingTurtle.momentId === null, 'a swim stroke is not a special moment');
+assert(actingTurtle.total >= 60 && actingTurtle.total <= 75, `clear turtle in motion ${actingTurtle.total}`);
+assert(actingTurtle.total === actingTurtle.composition + actingTurtle.rarity + actingTurtle.moment + actingTurtle.distanceDanger, 'action sum');
+
+const movingOcto = scoreFrame({
+  subjects: [
+    subject({
+      species: 'octopus',
+      rarity: 25,
+      acting: true,
+      fill: 0.28,
+      radiusNdcX: 0.14,
+      radiusNdcY: 0.28,
+      ndcX: 0.05,
+      ndcY: 0.72,
+      distance: 5.5,
+      optimal: 4.2,
+    }),
+  ],
+  depth: 10,
+  nearestPredator: 40,
+});
+const stillOcto = scoreFrame({
+  subjects: [
+    subject({
+      species: 'octopus',
+      rarity: 25,
+      acting: false,
+      fill: 0.28,
+      radiusNdcX: 0.14,
+      radiusNdcY: 0.28,
+      ndcX: 0.05,
+      ndcY: 0.72,
+      distance: 5.5,
+      optimal: 4.2,
+    }),
+  ],
+  depth: 10,
+  nearestPredator: 40,
+});
+assert(stillOcto.moment === 0 && stillOcto.total < 60, `still octopus stays out ${stillOcto.total} (${stillOcto.composition}/${stillOcto.rarity}/${stillOcto.moment}/${stillOcto.distanceDanger})`);
+assert(movingOcto.moment === 10 && movingOcto.momentNote === 'action', 'moving octopus earns the action base');
+assert(movingOcto.total >= 60 && movingOcto.total <= 75, `moving octopus passes ${movingOcto.total}`);
+assert(movingOcto.total === stillOcto.total + 10, 'the action line is the only change');
+
+const sloppy = scoreFrame({
+  subjects: [subject({ species: 'clownfish', rarity: 10, acting: true, ndcX: 0.92, ndcY: 0.7, fill: 0.1, radiusNdcX: 0.06, radiusNdcY: 0.1 })],
+  depth: 6,
+  nearestPredator: 40,
+});
+assert(sloppy.moment === 0 && sloppy.total < 60, `sloppy action stays under 60 (${sloppy.total})`);
+
+const actingClown = scoreFrame({
+  subjects: [subject({ species: 'clownfish', rarity: 10, acting: true, distance: 2.3, optimal: 2.3, fill: 0.3 })],
+  depth: 6,
+  nearestPredator: 40,
+});
+assert(actingClown.moment === 10 && actingClown.total >= 60 && actingClown.total <= 75, `clown in motion ${actingClown.total}`);
 
 const orca = scoreFrame({
   subjects: [subject({ species: 'orca', rarity: 25, dangerous: true, distance: 12, optimal: 13, fill: 0.34, radiusNdcY: 0.34 })],
@@ -66,7 +132,7 @@ const off = scoreFrame({
 });
 assert(off.total === 0, 'off-frame subject is ignored');
 
-for (const shot of [empty, turtle, turtleMoment, orca, clown, off]) {
+for (const shot of [empty, turtle, turtleMoment, actingTurtle, movingOcto, stillOcto, sloppy, actingClown, orca, clown, off]) {
   const sum = shot.composition + shot.rarity + shot.moment + shot.distanceDanger;
   assert(sum === shot.total, `categories ${sum} != total ${shot.total}`);
 }
@@ -199,4 +265,19 @@ assert(leftShelf > -14, `left shelf stays shallow ${leftShelf}`);
 assert(underSpawn < -16, `spawn drop ${underSpawn}`);
 assert(Math.abs(depthMeters(-1.88) - 0.98) < 0.02, 'surface depth');
 
-console.log('scoring ok', { turtle: turtle.total, moment: turtleMoment.total, orca: orca.total, clown: clown.total, trench, garden, underSpawn });
+console.log('scoring ok', {
+  turtle: turtle.total,
+  actingTurtle: actingTurtle.total,
+  moment: turtleMoment.total,
+  orca: orca.total,
+  clown: clown.total,
+  actingClown: actingClown.total,
+  stillOcto: stillOcto.total,
+  movingOcto: movingOcto.total,
+  movingParts: [movingOcto.composition, movingOcto.rarity, movingOcto.moment, movingOcto.distanceDanger],
+  stillParts: [stillOcto.composition, stillOcto.rarity, stillOcto.moment, stillOcto.distanceDanger],
+  sloppy: sloppy.total,
+  trench,
+  garden,
+  underSpawn,
+});

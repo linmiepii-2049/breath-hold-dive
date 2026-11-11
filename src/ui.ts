@@ -449,7 +449,7 @@ export class GameUI {
       <img alt="" src="${p.dataUrl}" />
       ${row(t('judge.comp'), p.score.composition, 30)}
       ${row(t('judge.rarity'), p.score.rarity, 25)}
-      ${row(t('judge.moment'), p.score.moment, 25)}
+      ${row(p.score.momentNote === 'action' ? t('judge.momentAction') : p.score.momentNote === 'special' ? t('judge.momentSpecial') : t('judge.moment'), p.score.moment, 25)}
       ${row(t('judge.danger'), p.score.distanceDanger, 20)}
       <div class="total-line"><span>${t('judge.total')}</span><b>${p.score.total}</b></div>
       ${

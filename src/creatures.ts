@@ -27,6 +27,7 @@ export interface Snap {
   optimal: number;
   moment: MomentId | null;
   dangerous: boolean;
+  acting: boolean;
 }
 
 export interface SimEvent {
@@ -98,8 +99,8 @@ export class OceanLife {
   private orca!: Swimmer;
   private orcaHit = false;
   private orcaTold = false;
-  /** Committed charge direction. The shark does not steer once it starts. */
-  private chargeDir = new Map<Swimmer, { x: number; y: number; z: number }>();
+  /** Committed charge ray. The shark does not steer once it starts. */
+  private chargeDir = new Map<Swimmer, { x: number; y: number; z: number; ox: number; oy: number; oz: number }>();
   private baitTold = false;
   private turtleTold = false;
   private orcaWait = 24;
@@ -855,22 +856,29 @@ export class OceanLife {
   private orbitShark(s: Swimmer, diver: Vector3, dt: number): void {
     const dx = s.x - diver.x;
     const dz = s.z - diver.z;
-    const ang = Math.atan2(dz, dx) + dt * 1.15;
-    const radius = 5.4;
+    const ang = Math.atan2(dz, dx) + dt * 0.95;
+    const radius = 7.2;
     const tx = diver.x + Math.cos(ang) * radius;
     const tz = diver.z + Math.sin(ang) * radius;
-    const ty = diver.y + Math.sin(this.t * 1.6) * 0.7;
-    this.seek(s, tx, ty, tz, 4.8, dt);
+    const ty = diver.y + Math.sin(this.t * 1.4) * 0.8;
+    this.seek(s, tx, ty, tz, 4.2, dt);
   }
 
-  /** Lock a straight run at the diver. Slower than a sprint, so a turn leaves the line. */
+  /** Lock a straight run at the diver. Slow enough that a one-second turn leaves the line. */
   private commitCharge(s: Swimmer, diver: Vector3, dist: number): void {
     const dx = diver.x - s.x;
     const dy = diver.y - s.y;
     const dz = diver.z - s.z;
     const len = Math.hypot(dx, dy, dz) || 1;
-    this.chargeDir.set(s, { x: dx / len, y: dy / len, z: dz / len });
-    this.setShark(s, 'charge', dist, 4.6);
+    this.chargeDir.set(s, {
+      x: dx / len,
+      y: dy / len,
+      z: dz / len,
+      ox: s.x,
+      oy: s.y,
+      oz: s.z,
+    });
+    this.setShark(s, 'charge', dist, 4.2);
   }
 
   private setShark(s: Swimmer, next: string, dist: number, timer: number): void {
@@ -897,17 +905,17 @@ export class OceanLife {
       s.timer -= dt;
       this.orbitShark(s, diver, dt);
       if (s.timer <= 0) {
-        if (dist < 13) this.commitCharge(s, diver, dist);
+        if (dist < 12) this.commitCharge(s, diver, dist);
         else this.setShark(s, 'patrol', dist, 12);
-      } else if (dist > 18) {
+      } else if (dist > 20) {
         this.setShark(s, 'patrol', dist, 11);
       }
       return;
     }
     if (s.state === 'charge') {
-      // 2.9 m/s is under the 4.16 m/s sprint, on the line locked at the start.
+      // 2.5 m/s is under the 4.16 m/s sprint. The ray is locked when the circle ends.
       const aim = this.chargeDir.get(s);
-      const speed = 2.9;
+      const speed = 2.5;
       if (aim) {
         s.x += aim.x * speed * dt;
         s.y += aim.y * speed * dt;
@@ -918,17 +926,25 @@ export class OceanLife {
       if (s.y < floor + 1.15) s.y = floor + 1.15;
       s.timer -= dt;
       const now = Math.hypot(s.x - diver.x, s.y - diver.y, s.z - diver.z);
-      if (now < 2.15) {
+      let lat = 0;
+      if (aim) {
+        const vx = diver.x - aim.ox;
+        const vy = diver.y - aim.oy;
+        const vz = diver.z - aim.oz;
+        const along = vx * aim.x + vy * aim.y + vz * aim.z;
+        lat = Math.hypot(vx - aim.x * along, vy - aim.y * along, vz - aim.z * along);
+      }
+      if (now < 2.2) {
         this.setShark(s, 'retreat', now, 4.5);
         out.hit = out.hit ?? 'shark';
-      } else if (s.timer <= 0 || now > 16) {
+      } else if (s.timer <= 0 || now > 14 || lat > 3.2) {
         this.setShark(s, 'patrol', now, 12);
       }
       return;
     }
     // Close enough to see is close enough to warn, including the bait-ball run.
     if (aggro && !this.calmSpawn() && s.timer <= 0 && dist < 18) {
-      this.setShark(s, 'warn', dist, 3.2);
+      this.setShark(s, 'warn', dist, 4.5);
       out.sharkWarn = true;
       out.sharkThreat = true;
       this.orbitShark(s, diver, dt);
@@ -1048,6 +1064,15 @@ export class OceanLife {
     this.schoolTail.instanceMatrix.needsUpdate = true;
   }
 
+  /** A stroke, a turn, a chase, or a feeding pass. Sitting still does not count. */
+  private swimmerActing(s: Swimmer): boolean {
+    if (s.species === 'turtle' && s.state === 'breathe') return true;
+    if (s.state === 'charge' || s.state === 'warn' || s.state === 'retreat' || s.state === 'up' || s.state === 'down') {
+      return true;
+    }
+    return s.species !== 'turtle' || s.state === 'cruise';
+  }
+
   private rebuildSnaps(): void {
     this.snaps.length = 0;
     const scatter = this.bait === 'scatter';
@@ -1076,8 +1101,10 @@ export class OceanLife {
       optimal: 8.5,
       moment: scatter ? 'baitball' : null,
       dangerous: false,
+      acting: true,
     });
     for (const b of this.boids) {
+      const moving = Math.hypot(b.vx, b.vy, b.vz) > 0.35;
       this.snaps.push({
         species: 'sardine',
         rarity: 8,
@@ -1088,6 +1115,7 @@ export class OceanLife {
         optimal: 2.1,
         moment: scatter ? 'baitball' : null,
         dangerous: false,
+        acting: moving,
       });
     }
     for (const s of this.swimmers) {
@@ -1106,6 +1134,7 @@ export class OceanLife {
         optimal: s.optimal,
         moment,
         dangerous: s.dangerous,
+        acting: this.swimmerActing(s),
       });
     }
     this.snaps.push({
@@ -1118,6 +1147,7 @@ export class OceanLife {
       optimal: 4.2,
       moment: null,
       dangerous: false,
+      acting: this.displaying,
     });
   }
 
