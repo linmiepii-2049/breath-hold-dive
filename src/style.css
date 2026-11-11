@@ -140,6 +140,16 @@ button:hover:not(:disabled) { filter: brightness(1.08); }
 .bar.stamina > span { background: #f0c36a; }
 .bar.stamina { height: 5px; }
 .warn { min-height: 1.2em; margin-top: 8px; text-align: center; color: var(--gold); font-size: 14px; }
+.warn.charge {
+  color: var(--danger);
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-shadow: 0 0 18px rgba(255, 60, 70, 0.7);
+}
+#ui.charging #vignette {
+  background: radial-gradient(circle at center, transparent 30%, rgba(190, 16, 28, 0.78) 100%);
+}
 .warn kbd,
 .pause kbd {
   display: inline-block;

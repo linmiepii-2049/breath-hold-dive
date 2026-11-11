@@ -113,6 +113,7 @@ export class Game {
   private strokePhase = 0;
   private sprintLatched = false;
   private sharkThreat = false;
+  private sharkCharging = false;
   private needsSteer = false;
   private relockUntil = 0;
 
@@ -284,6 +285,7 @@ export class Game {
     this.strokePhase = 0;
     this.sprintLatched = false;
     this.sharkThreat = false;
+    this.sharkCharging = false;
     this.paused = false;
     this.needsSteer = false;
     this.unlockedAt = 0;
@@ -452,6 +454,7 @@ export class Game {
     }
 
     this.present(frameDt);
+    if (this.mode === 'dive' && this.paused && this.just.has('KeyE') && this.surfaced()) this.finishDive();
     this.just.clear();
     this.mouseDX = 0;
     this.mouseDY = 0;
@@ -609,7 +612,6 @@ export class Game {
     if (this.blackout && depthNow >= BALANCE.surfaceUi && (this.blackoutT - this.blackoutProgress > 4 || this.blackoutT > 18)) {
       this.finishDive();
     }
-    const bobbing = depthNow < BALANCE.surfaceUi;
     const wideSurface = depthNow < BALANCE.surfaceDepth + 0.2;
     // Reaching the surface refills oxygen and stays in the dive. The judge card
     // opens only from E, or after a blackout / forced ascent has held them there.
@@ -619,7 +621,7 @@ export class Game {
     } else {
       this.surfaceHold = 0;
     }
-    if (bobbing && this.just.has('KeyE')) this.finishDive();
+    if (this.surfaced() && this.just.has('KeyE')) this.finishDive();
 
     const swim = Math.hypot(this.velX, this.velY, this.velZ);
     const kicking = this.keys.has('Space') || bursting;
@@ -1251,7 +1253,9 @@ export class Game {
     if (ev.turtleStart) this.pushToast('toast.turtle');
     if (ev.orcaStart) this.pushToast('toast.orcaNear');
     if (ev.sharkWarn) this.pushToast('toast.sharkNear');
+    if (ev.sharkCharge) this.pushToast('toast.sharkCharge');
     this.sharkThreat = ev.sharkThreat;
+    this.sharkCharging = ev.sharkCharging;
     if (!ev.hit || this.invuln > 0 || this.blackout) return;
     this.invuln = 2.7;
     this.stamina = Math.max(0, this.stamina - BALANCE.hitStamina);
@@ -1264,6 +1268,10 @@ export class Game {
       this.lockSurface = true;
       this.pushToast('toast.done');
     }
+  }
+
+  private surfaced(): boolean {
+    return depthMeters(this.feet.y) < BALANCE.surfaceUi || headAtSurface(this.feet.y);
   }
 
   private finishDive(): void {
@@ -1597,7 +1605,7 @@ export class Game {
       film: this.filmLeft,
       filmMax: BALANCE.film,
       warnReturn: this.mode === 'dive' && depth > 4 && this.o2 < need * 1.18 && !this.blackout,
-      atSurface: this.mode === 'dive' && depth < BALANCE.surfaceUi,
+      atSurface: this.mode === 'dive' && this.surfaced(),
       viewfinder: this.viewfinder,
       mm: focalMm(this.fov),
       focus,
@@ -1607,6 +1615,7 @@ export class Game {
       burstLeft: this.burstT,
       burstCd: this.burstCd,
       sharkThreat: this.mode === 'dive' && this.sharkThreat,
+      sharkCharging: this.mode === 'dive' && this.sharkCharging,
       toasts: this.toasts.map((toast) => toast.key),
       flash: this.flash,
       vignette: this.mode === 'dive' ? (this.blackout ? 0.35 : o2frac < 0.34 ? (0.34 - o2frac) / 0.34 : 0) : 0,

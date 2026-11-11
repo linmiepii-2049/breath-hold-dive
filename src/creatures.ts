@@ -37,8 +37,12 @@ export interface SimEvent {
   orcaStart: boolean;
   /** True on the frame a shark starts its warning circle. */
   sharkWarn: boolean;
-  /** True while a shark is circling or charging. */
+  /** True while a shark is circling, before the charge. */
   sharkThreat: boolean;
+  /** True on the frame a shark commits to the charge. */
+  sharkCharge: boolean;
+  /** True while a shark is charging. */
+  sharkCharging: boolean;
 }
 
 interface Boid {
@@ -104,8 +108,10 @@ export class OceanLife {
   private orca!: Swimmer;
   private orcaHit = false;
   private orcaTold = false;
-  /** Charge aim. Re-aimed every step so a drift is followed; a sprint outruns it. */
-  private chargeDir = new Map<Swimmer, { x: number; y: number; z: number; ox: number; oy: number; oz: number }>();
+  /** Charge aim. `start` is the gap when the charge began, so a sprint that opens it ends the run. */
+  private chargeDir = new Map<Swimmer, { x: number; y: number; z: number; ox: number; oy: number; oz: number; start: number }>();
+  /** Circle frozen on the diver's position when the warning started. A sprint leaves the ring. */
+  private orbitAnchor = new Map<Swimmer, { x: number; y: number; z: number; radius: number; ang: number }>();
   private baitTold = false;
   private turtleTold = false;
   private orcaWait = 24;
@@ -355,6 +361,8 @@ export class OceanLife {
       orcaStart: false,
       sharkWarn: false,
       sharkThreat: false,
+      sharkCharge: false,
+      sharkCharging: false,
     };
     if (this.debugLock > 0) {
       this.debugLock = Math.max(0, this.debugLock - dt);
@@ -864,35 +872,33 @@ export class OceanLife {
   }
 
   /**
-   * Swing most of a circle in view. The aim point walks around the diver,
-   * so the shark is visibly circling rather than creeping in.
+   * Turn on the ring captured when the warning began. The shark does not
+   * follow a diver who sprints away, so that second of warning is real distance.
    */
-  private orbitShark(s: Swimmer, diver: Vector3, dt: number): void {
-    const dx = s.x - diver.x;
-    const dz = s.z - diver.z;
-    const ang = Math.atan2(dz, dx) + dt * 0.95;
-    const radius = 7.2;
-    const tx = diver.x + Math.cos(ang) * radius;
-    const tz = diver.z + Math.sin(ang) * radius;
-    const ty = diver.y + Math.sin(this.t * 1.4) * 0.8;
-    this.seek(s, tx, ty, tz, 4.2, dt);
+  private holdCircle(s: Swimmer, dt: number): void {
+    const a = this.orbitAnchor.get(s);
+    if (!a) return;
+    a.ang += dt * (3.4 / Math.max(6, a.radius));
+    s.x = a.x + Math.cos(a.ang) * a.radius;
+    s.z = a.z + Math.sin(a.ang) * a.radius;
+    const floor = terrainHeight(s.x, s.z);
+    const bob = Math.sin(this.t * 1.4) * 0.28;
+    s.y = Math.min(-1.7, Math.max(floor + 1.2, a.y + bob));
+    s.yaw = Math.atan2(a.x - s.x, a.z - s.z);
   }
 
-  /** Lock a straight run at the diver. Slow enough that a one-second turn leaves the line. */
-  private commitCharge(s: Swimmer, diver: Vector3, dist: number): void {
-    const dx = diver.x - s.x;
-    const dy = diver.y - s.y;
-    const dz = diver.z - s.z;
-    const len = Math.hypot(dx, dy, dz) || 1;
+  /** Lock a run at the diver. The charge is slower than a sprint, and it ends if the gap opens. */
+  private commitCharge(s: Swimmer, dist: number): void {
     this.chargeDir.set(s, {
-      x: dx / len,
-      y: dy / len,
-      z: dz / len,
+      x: 0,
+      y: 0,
+      z: 0,
       ox: s.x,
       oy: s.y,
       oz: s.z,
+      start: dist,
     });
-    this.setShark(s, 'charge', dist, 4.2);
+    this.setShark(s, 'charge', dist, 3.85);
   }
 
   private setShark(s: Swimmer, next: string, dist: number, timer: number): void {
@@ -907,7 +913,10 @@ export class OceanLife {
     const scripted = s === this.sharkA && this.bait !== 'flock' && !this.calmSpawn();
     // `diver` is already the chest. An extra +1 m hid sharks that were plainly on screen.
     const dist = Math.hypot(s.x - diver.x, s.y - diver.y, s.z - diver.z);
-    if (s.state === 'warn' || s.state === 'charge') out.sharkThreat = true;
+    // Chest above this is a head at the surface. A shark does not follow you out.
+    const surfaced = diver.y > -1.05;
+    if (s.state === 'warn') out.sharkThreat = true;
+    if (s.state === 'charge') out.sharkCharging = true;
     if (s.state === 'retreat') {
       s.timer -= dt;
       this.seek(s, s.x - Math.sin(s.yaw) * 4, s.y, s.z - Math.cos(s.yaw) * 4, 3.2, dt);
@@ -917,18 +926,24 @@ export class OceanLife {
     }
     if (s.state === 'warn') {
       s.timer -= dt;
-      this.orbitShark(s, diver, dt);
-      if (s.timer <= 0) {
-        if (dist < 12) this.commitCharge(s, diver, dist);
-        else this.setShark(s, 'patrol', dist, 12);
-      } else if (dist > 20) {
-        this.setShark(s, 'patrol', dist, 11);
+      this.holdCircle(s, dt);
+      const now = Math.hypot(s.x - diver.x, s.y - diver.y, s.z - diver.z);
+      // The ring stays put, so a sprint during this second opens the gap.
+      // Past ~12 m the charge would fall short; the shark gives up instead.
+      if (surfaced || now > 12.4) {
+        this.setShark(s, 'patrol', now, 11);
+      } else if (s.timer <= 0) {
+        if (now <= 11.5) {
+          this.commitCharge(s, now);
+          out.sharkCharge = true;
+          out.sharkCharging = true;
+        } else this.setShark(s, 'patrol', now, 12);
       }
       return;
     }
     if (s.state === 'charge') {
       // 2.5 m/s is under the 4.16 m/s sprint. Steering onto the diver finishes a
-      // sink or a drift. A sprint in any direction opens the gap and the run ends.
+      // sink or a drift. A sprint opens the gap and the run ends.
       const aim = this.chargeDir.get(s);
       const speed = 2.5;
       const dx = diver.x - s.x;
@@ -948,20 +963,29 @@ export class OceanLife {
       if (s.y < floor + 1.15) s.y = floor + 1.15;
       s.timer -= dt;
       const now = Math.hypot(s.x - diver.x, s.y - diver.y, s.z - diver.z);
+      const opened = aim ? now > aim.start + 1.5 : false;
       if (now < 2.2) {
         this.setShark(s, 'retreat', now, 4.5);
         out.hit = out.hit ?? 'shark';
-      } else if (s.timer <= 0 || now > 14) {
+      } else if (surfaced || opened || s.timer <= 0 || now > 13.2) {
         this.setShark(s, 'patrol', now, 12);
       }
       return;
     }
-    // Close enough to see is close enough to warn, including the bait-ball run.
-    if (aggro && !this.calmSpawn() && s.timer <= 0 && dist < 18) {
-      this.setShark(s, 'warn', dist, 4.5);
+    // Warn only when a charge from here can still catch a diver who does not move.
+    if (aggro && !this.calmSpawn() && s.timer <= 0 && dist < 11.2 && !surfaced) {
+      const ang = Math.atan2(s.z - diver.z, s.x - diver.x);
+      this.orbitAnchor.set(s, {
+        x: diver.x,
+        y: diver.y,
+        z: diver.z,
+        radius: clamp(dist, 6.2, 11.2),
+        ang,
+      });
+      this.setShark(s, 'warn', dist, 1.05);
       out.sharkWarn = true;
       out.sharkThreat = true;
-      this.orbitShark(s, diver, dt);
+      this.holdCircle(s, dt);
       return;
     }
     if (scripted) {
