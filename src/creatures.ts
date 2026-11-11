@@ -67,6 +67,11 @@ interface Swimmer {
   wps: Array<[number, number, number]>;
   wp: number;
   phase: number;
+  /** Metres per second from the last step. A frozen pose stays at 0. */
+  travel?: number;
+  prevX?: number;
+  prevY?: number;
+  prevZ?: number;
 }
 
 const OCTO_SHOW = [0xe36a8c, 0x49b3a8, 0xe0a15a, 0x7a6ad4];
@@ -467,7 +472,7 @@ export class OceanLife {
         speed: 0.6,
         radius: 0.22,
         optimal: 2.3,
-        rarity: 10,
+        rarity: 12,
         dangerous: false,
         wps: [],
         wp: i,
@@ -499,7 +504,7 @@ export class OceanLife {
         speed: 1.15,
         radius: 0.42,
         optimal: 4,
-        rarity: 11,
+        rarity: 13,
         dangerous: false,
         wps: parrotWps,
         wp: i % parrotWps.length,
@@ -754,6 +759,10 @@ export class OceanLife {
 
   private stepSwimmers(dt: number, diver: Vector3, aggro: boolean, events: boolean, out: SimEvent): void {
     for (const s of this.swimmers) {
+      const ox = s.prevX;
+      const oy = s.prevY;
+      const oz = s.prevZ;
+      const hadPrev = ox !== undefined && oy !== undefined && oz !== undefined;
       if (s.species === 'clownfish') {
         const anchorY = terrainHeight(LANDMARKS.anemone.x, LANDMARKS.anemone.z) + 0.85;
         const ang = this.t * 0.85 + s.phase;
@@ -789,6 +798,11 @@ export class OceanLife {
       const tail =
         s.species === 'manta' ? 2.4 : s.state === 'charge' ? 14 : s.state === 'warn' ? 10 : 7;
       animateTail(s.mesh, this.t, tail, s.phase);
+      if (hadPrev) s.travel = Math.hypot(s.x - ox, s.y - oy, s.z - oz) / Math.max(dt, 1e-4);
+      else s.travel = 0;
+      s.prevX = s.x;
+      s.prevY = s.y;
+      s.prevZ = s.z;
     }
   }
 
@@ -1064,13 +1078,12 @@ export class OceanLife {
     this.schoolTail.instanceMatrix.needsUpdate = true;
   }
 
-  /** A stroke, a turn, a chase, or a feeding pass. Sitting still does not count. */
+  /** A stroke, a turn, a chase, or a feeding pass. A frozen or hovering pose does not count. */
   private swimmerActing(s: Swimmer): boolean {
     if (s.species === 'turtle' && s.state === 'breathe') return true;
-    if (s.state === 'charge' || s.state === 'warn' || s.state === 'retreat' || s.state === 'up' || s.state === 'down') {
-      return true;
-    }
-    return s.species !== 'turtle' || s.state === 'cruise';
+    if (s.state === 'charge' || s.state === 'warn' || s.state === 'retreat') return true;
+    if (this.debugLock > 0) return false;
+    return (s.travel ?? 0) > 0.28;
   }
 
   private rebuildSnaps(): void {
@@ -1093,7 +1106,7 @@ export class OceanLife {
     spread /= n;
     this.snaps.push({
       species: 'sardine',
-      rarity: 12,
+      rarity: 14,
       x: sx,
       y: sy,
       z: sz,
@@ -1107,7 +1120,7 @@ export class OceanLife {
       const moving = Math.hypot(b.vx, b.vy, b.vz) > 0.35;
       this.snaps.push({
         species: 'sardine',
-        rarity: 8,
+        rarity: 10,
         x: b.x,
         y: b.y,
         z: b.z,

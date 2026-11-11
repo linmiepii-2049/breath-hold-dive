@@ -406,13 +406,13 @@ export function makeDiver(): Group {
 
 /** A quiet teal edge that strengthens with depth. The suit stays low-poly and dark. */
 export function shadeDiver(diver: Group, depth: number): void {
-  const k = Math.max(0, Math.min(1, (depth - 10) / 16));
+  const k = Math.max(0, Math.min(1, (depth - 12) / 28));
   const suit = diver.userData.suit as MeshLambertMaterial;
   const skin = diver.userData.skin as MeshLambertMaterial;
   const finMat = diver.userData.finMat as MeshLambertMaterial;
   const accent = diver.userData.accent as MeshLambertMaterial;
-  suit.emissive.setHex(0x1c6e7c);
-  suit.emissiveIntensity = 0.05 + k * 0.72;
+  suit.emissive.setHex(0x2488a0);
+  suit.emissiveIntensity = 0.06 + k * 1.35;
   skin.emissive.setHex(0xc48a68);
   skin.emissiveIntensity = 0.04 + k * 0.4;
   finMat.emissive.setHex(0x7af6e4);
@@ -428,6 +428,20 @@ export function tintDiver(diver: Group, suitLevel: number, finLevel: number): vo
   for (const fin of diver.userData.fins as Mesh[]) {
     fin.scale.set(0.14 * (1 + finLevel * 0.04), 0.028, 0.46 * stretch);
   }
+}
+
+/** Arm, leg, and whole-body pitch for one frame of the kick. Collision uses the same numbers. */
+export function diverStroke(kicking: boolean, burst: boolean, phase: number): { arm: number; leg: number; wobble: number } {
+  const window = burst ? 0.7 : 0.85;
+  const u = kicking ? Math.min(1, (phase % 1) / window) : 0;
+  const sweep = Math.sin(u * Math.PI);
+  const amp = burst ? 1.2 : kicking ? 1.05 : 0.08;
+  const base = kicking ? -0.2 : 0.25;
+  return {
+    arm: kicking ? -0.28 - sweep * 0.4 : -0.9,
+    leg: base - sweep * amp,
+    wobble: kicking ? Math.sin((phase % 1) * Math.PI * 2) * (burst ? 0.1 : 0.07) : 0,
+  };
 }
 
 /**
@@ -447,17 +461,12 @@ export function animateDiver(diver: Group, time: number, kicking: boolean, burst
     armR.rotation.x = s * 0.04;
     return;
   }
-  const window = burst ? 0.7 : 0.85;
-  const u = kicking ? Math.min(1, (phase % 1) / window) : 0;
-  const sweep = Math.sin(u * Math.PI);
+  const stroke = diverStroke(kicking, burst, phase);
   // Negative pitch lifts the blades toward the back, so the kick reads from the rear camera.
-  const amp = burst ? 1.2 : kicking ? 1.05 : 0.08;
-  const base = kicking ? -0.2 : 0.25;
-  legL.rotation.x = base - sweep * amp;
-  legR.rotation.x = base - sweep * amp;
-  const arm = kicking ? -0.28 - sweep * 0.4 : -0.9;
-  armL.rotation.x = arm;
-  armR.rotation.x = arm;
+  legL.rotation.x = stroke.leg;
+  legR.rotation.x = stroke.leg;
+  armL.rotation.x = stroke.arm;
+  armR.rotation.x = stroke.arm;
 }
 
 export function animateTail(group: Group, time: number, speed: number, phase = 0): void {
