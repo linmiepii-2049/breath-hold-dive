@@ -120,6 +120,10 @@ export class OceanLife {
   private diverSpeed = 0;
   /** Seconds the speed has stayed in the sprint band. A one-frame wall pop does not count. */
   private sprintHold = 0;
+  /** Seconds the diver has been yawing hard. A slow look around does not count. */
+  private turnHold = 0;
+  private prevYaw = 0;
+  private yawReady = false;
   private diverReady = false;
   private octoTold = false;
   /** Circle frozen on the diver's position when the warning started. A sprint leaves the ring. */
@@ -151,6 +155,9 @@ export class OceanLife {
 
   reset(): void {
     this.t = 0;
+    this.turnHold = 0;
+    this.yawReady = false;
+    this.sprintHold = 0;
     this.bait = 'flock';
     this.nextBait = 40;
     this.baitLeft = 0;
@@ -209,6 +216,7 @@ export class OceanLife {
     this.nextBait = 99999;
     this.baitLeft = 0;
     this.sprintHold = 0;
+    this.turnHold = 0;
     for (const other of this.swimmers) {
       if (other.species !== 'shark' || other === shark) continue;
       other.state = 'patrol';
@@ -1031,8 +1039,27 @@ export class OceanLife {
   }
 
   /** A sprint is well above a drift or a cruise kick, and has to last a moment. */
+  /** Called once per physics step with the diver's current yaw. */
+  noteHeading(yaw: number, dt: number): void {
+    if (this.yawReady) {
+      let d = yaw - this.prevYaw;
+      while (d > Math.PI) d -= Math.PI * 2;
+      while (d < -Math.PI) d += Math.PI * 2;
+      const rate = Math.abs(d) / Math.max(dt, 1e-4);
+      if (rate > 1.15) this.turnHold = Math.min(0.6, this.turnHold + dt);
+      else this.turnHold = Math.max(0, this.turnHold - dt * 1.5);
+    }
+    this.prevYaw = yaw;
+    this.yawReady = true;
+  }
+
   private diverSprinting(): boolean {
     return this.sprintHold >= 0.16;
+  }
+
+  /** A sprint or a sustained hard turn. Drifting and a slow look do not count. */
+  private escaping(): boolean {
+    return this.diverSprinting() || this.turnHold > 0.18;
   }
 
   /** Lock a run at the diver. It keeps homing until it touches a diver who only drifts. */
@@ -1082,10 +1109,13 @@ export class OceanLife {
       const anchor = this.orbitAnchor.get(s);
       const moved = anchor ? Math.hypot(diver.x - anchor.x, diver.z - anchor.z) : 0;
       // Horizontal only. A floor that lifts the shark must not count as the diver fleeing.
-      const fled = this.diverSprinting() || moved > 2.05 || horizNow > 16;
+      // A couple of metres of drift is not an escape. A sprint or a hard turn is.
+      const fled = this.escaping() || moved > 3.2 || horizNow > 16;
       if (fled) {
         if (this.sharkLog) {
-          console.info(`[shark] warn abort sprint=${this.diverSprinting()} moved=${moved.toFixed(1)} horiz=${horizNow.toFixed(1)}`);
+          console.info(
+            `[shark] warn abort sprint=${this.diverSprinting()} turn=${this.turnHold > 0.18} moved=${moved.toFixed(1)} horiz=${horizNow.toFixed(1)}`,
+          );
         }
         this.setShark(s, 'patrol', now, 11);
       } else if (s.timer <= 0) {
@@ -1098,47 +1128,22 @@ export class OceanLife {
       return;
     }
     if (s.state === 'charge') {
-      // Horizontal speed stays full even when the floor throws away the vertical
-      // part of a 3D step. A diver sitting on the trench floor is still closed on.
+      // Home on the diver's current position. A shelf must not steer the shark
+      // off to the side and leave it circling just outside the old hit radius.
       const aim = this.chargeDir.get(s);
       const speed = 3.6;
       const dx = diver.x - s.x;
       const dy = diver.y - s.y;
       const dz = diver.z - s.z;
       const horiz = Math.hypot(dx, dz) || 1;
-      let floor = terrainHeight(s.x, s.z);
-      const blocked = floor + 1.15 > diver.y + 2.5 && horiz < 10;
-      if (blocked) {
-        let bestX = 0;
-        let bestZ = 0;
-        let bestF = floor;
-        for (const [ox, oz] of [
-          [5, 0],
-          [-5, 0],
-          [0, 5],
-          [0, -5],
-          [4, 4],
-          [-4, 4],
-          [4, -4],
-          [-4, -4],
-        ]) {
-          const f = terrainHeight(s.x + ox, s.z + oz);
-          if (f < bestF) {
-            bestF = f;
-            bestX = ox;
-            bestZ = oz;
-          }
-        }
-        const step = Math.hypot(bestX, bestZ) || 1;
-        s.x += (bestX / step) * speed * dt;
-        s.z += (bestZ / step) * speed * dt;
-      } else if (horiz > 0.35) {
+      if (horiz > 0.2) {
         s.x += (dx / horiz) * speed * dt;
         s.z += (dz / horiz) * speed * dt;
       }
-      floor = terrainHeight(s.x, s.z);
-      const room = floor + 1.15;
-      if (!blocked) s.y += Math.sign(dy) * Math.min(speed * dt, Math.abs(dy));
+      const floor = terrainHeight(s.x, s.z);
+      const room = floor + 1.05;
+      const targetY = Math.max(room, Math.min(-0.9, diver.y));
+      s.y += Math.sign(targetY - s.y) * Math.min(speed * dt, Math.abs(targetY - s.y));
       if (s.y < room) s.y = room;
       if (s.y > -0.85) s.y = -0.85;
       s.yaw = Math.atan2(dx, dz);
@@ -1146,21 +1151,28 @@ export class OceanLife {
         aim.x = dx / horiz;
         aim.y = Math.sign(dy);
         aim.z = dz / horiz;
+        const gap = Math.hypot(dx, dy, dz);
+        if (gap < aim.min - 0.04) {
+          aim.min = gap;
+          aim.stall = 0;
+        } else aim.stall += dt;
       }
       s.timer -= dt;
       const now = Math.hypot(s.x - diver.x, s.y - diver.y, s.z - diver.z);
       const horizLeft = Math.hypot(s.x - diver.x, s.z - diver.z);
-      if (aim) {
-        if (now < aim.min - 0.04 || horizLeft < horiz - 0.05) {
-          aim.min = Math.min(aim.min, now);
-          aim.stall = 0;
-        } else aim.stall += dt;
-      }
-      const stalled = !!aim && aim.stall > 2.2 && now > 2.2 && horizLeft > 3;
-      if (now < 2.2) {
+      const vert = Math.abs(s.y - diver.y);
+      const escaping = this.escaping();
+      // Close enough to bite a diver who is not sprinting or turning away.
+      const close = now < 3.5 || (horizLeft <= 3 && vert <= 5);
+      if (close && !escaping) {
         this.setShark(s, 'retreat', now, 4.5);
         out.hit = out.hit ?? 'shark';
-      } else if (this.diverSprinting() || s.timer <= 0 || now > 22 || stalled) {
+      } else if (escaping || s.timer <= 0 || now > 22) {
+        if (this.sharkLog) {
+          console.info(
+            `[shark] charge abort sprint=${this.diverSprinting()} turn=${this.turnHold > 0.18} now=${now.toFixed(1)} t=${s.timer.toFixed(1)}`,
+          );
+        }
         this.setShark(s, 'patrol', now, 12);
       }
       return;

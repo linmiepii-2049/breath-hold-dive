@@ -545,7 +545,14 @@ body.touch .steer-zone {
   animation: steer-fade 6s ease forwards;
 }
 body.touch .vf-tag {
-  top: calc(112px + env(safe-area-inset-top, 0px));
+  top: calc(48px + env(safe-area-inset-top, 0px));
+  left: calc(12px + env(safe-area-inset-left, 0px));
+  right: auto;
+  transform: none;
+  text-align: left;
+  max-width: min(220px, 40vw);
+  letter-spacing: 0.04em;
+  z-index: 6;
 }
 body.touch .toasts {
   top: calc(6px + env(safe-area-inset-top, 0px));

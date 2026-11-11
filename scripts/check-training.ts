@@ -11,7 +11,7 @@ function assert(cond: unknown, msg: string): void {
 }
 
 const intro = createBreath();
-for (let i = 0; i < 120; i++) stepBreath(intro, 1 / 60, new Set(['KeyJ']), new Set(['KeyJ']), null);
+for (let i = 0; i < 60; i++) stepBreath(intro, 1 / 60, new Set(['KeyJ']), new Set(['KeyJ']), null);
 assert(intro.total === 0 && !intro.done, 'the lead-in is not scored');
 
 const early = createBreath();

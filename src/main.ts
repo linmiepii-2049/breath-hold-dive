@@ -46,7 +46,8 @@ if (!webglSupported()) {
   showWebglFail();
 } else try {
   const game = new Game(canvas, ui);
-  if (import.meta.env.DEV) {
+  const debugOn = new URLSearchParams(location.search).has('debug');
+  if (import.meta.env.DEV || debugOn) {
     (window as unknown as { __bh: Game }).__bh = game;
   }
   canvas.addEventListener('webglcontextlost', (ev) => {

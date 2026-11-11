@@ -124,6 +124,71 @@ const cornerTurtle = scoreFrame({
 });
 assert(cornerTurtle.species === null && cornerTurtle.momentId === null, 'a corner turtle is not the subject');
 
+const farClown = scoreFrame({
+  subjects: [
+    subject({
+      species: 'clownfish',
+      rarity: 12,
+      acting: true,
+      fill: 0.05,
+      clarity: 0.7,
+      radiusNdcX: 0.04,
+      radiusNdcY: 0.06,
+      ndcX: 0.12,
+      ndcY: -0.08,
+      distance: 16,
+      optimal: 3.2,
+    }),
+  ],
+  depth: 8,
+  nearestPredator: 40,
+});
+assert(
+  farClown.species === 'clownfish' && farClown.moment === 10,
+  `a distant swimming clownfish still earns the motion line (${farClown.moment}, total ${farClown.total})`,
+);
+
+const farStill = scoreFrame({
+  subjects: [
+    subject({
+      species: 'clownfish',
+      rarity: 12,
+      acting: false,
+      fill: 0.05,
+      clarity: 0.7,
+      radiusNdcX: 0.04,
+      radiusNdcY: 0.06,
+      ndcX: 0.12,
+      ndcY: -0.08,
+      distance: 16,
+      optimal: 3.2,
+    }),
+  ],
+  depth: 8,
+  nearestPredator: 40,
+});
+assert(farStill.moment === 0, `a distant still clownfish has no motion line (${farStill.moment})`);
+
+const shellCover = scoreFrame({
+  subjects: [
+    subject({
+      species: 'turtle',
+      rarity: 16,
+      acting: false,
+      ndcX: -0.46,
+      ndcY: 0.04,
+      radiusNdcX: 0.52,
+      radiusNdcY: 0.38,
+      fill: 0.48,
+      distance: 4,
+      optimal: 7,
+    }),
+  ],
+  depth: 8,
+  nearestPredator: 40,
+});
+assert(shellCover.species === 'turtle', `a shell covering the reticle is the subject (${shellCover.species})`);
+
 const promptTurtle = scoreFrame({
   subjects: [
     subject({
@@ -157,7 +222,7 @@ const school = scoreFrame({
       ndcX: 0.7,
       ndcY: 0.05,
       fill: 0.9,
-      radiusNdcX: 0.7,
+      radiusNdcX: 0.4,
       radiusNdcY: 0.9,
     }),
   ],

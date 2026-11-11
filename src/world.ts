@@ -134,7 +134,8 @@ export function createWorld(): World {
   scene.add(reef);
   scene.add(wall);
   scene.add(buildBeach());
-  scene.add(buildTrenchGuide());
+  const guideFades: Mesh[] = [];
+  scene.add(buildTrenchGuide(guideFades));
 
   const anemone = buildAnemone();
   anemone.position.set(LANDMARKS.anemone.x, terrainHeight(LANDMARKS.anemone.x, LANDMARKS.anemone.z), LANDMARKS.anemone.z);
@@ -192,6 +193,17 @@ export function createWorld(): World {
       fans.forEach((m, i) => {
         m.rotation.y = (m.userData.baseY as number) + Math.sin(time * 0.6 + i) * 0.08;
       });
+      // Hide the trail where it would pass through the diver. The next beads still show the way.
+      for (let i = 0; i < guideFades.length; i++) {
+        const mesh = guideFades[i];
+        const d = Math.hypot(mesh.position.x - diverX, mesh.position.y - diverY, mesh.position.z - diverZ);
+        // A link is a few metres long, so hide anything whose center is still near the body.
+        const t = Math.max(0, Math.min(1, (d - 2.4) / 1.8));
+        const fade = t * t * (3 - 2 * t);
+        const mat = mesh.material as MeshBasicMaterial;
+        mat.opacity = fade;
+        mesh.visible = fade > 0.05;
+      }
       if (detail) {
         shafts.forEach((m, i) => {
           const fade = (1 - Math.min(1, diverDepth / 14)) * (camY < 8 ? 1 : 0.45);
@@ -219,41 +231,59 @@ export function createWorld(): World {
 const guideUp = new Vector3(0, 1, 0);
 const guideDir = new Vector3();
 
-function guideBead(g: Group, x: number, z: number, mat: MeshBasicMaterial, radius: number, lift: number): Vector3 {
-  const y = terrainHeight(x, z) + lift;
-  const m = new Mesh(new SphereGeometry(radius, 10, 8), mat);
+function guideMaterial(color: number): MeshBasicMaterial {
+  return new MeshBasicMaterial({ color, fog: false, transparent: true, opacity: 1, depthWrite: false });
+}
+
+/** Bead x at this z. It stays in the deep channel, just off the diver's lane. */
+function beadX(z: number): number {
+  return 12.2 + Math.max(0, z - 30) * 0.04;
+}
+
+/** Glide height: in the water the diver actually swims, never under the floor. */
+function beadHeight(x: number, z: number): number {
+  const floor = terrainHeight(x, z);
+  const glide = -3.2 - Math.max(0, z - 11) * 0.72;
+  return Math.max(floor + 1.8, glide);
+}
+
+function guideBead(g: Group, fades: Mesh[], x: number, z: number, color: number, radius: number, y: number): Vector3 {
+  const m = new Mesh(new SphereGeometry(radius, 10, 8), guideMaterial(color));
   m.position.set(x, y, z);
   g.add(m);
+  fades.push(m);
   return m.position.clone();
 }
 
-function guideLink(g: Group, a: Vector3, b: Vector3, mat: MeshBasicMaterial, radius: number): void {
+function guideLink(g: Group, fades: Mesh[], a: Vector3, b: Vector3, color: number, radius: number): void {
   guideDir.copy(b).sub(a);
   const len = guideDir.length();
   if (len < 0.05) return;
-  const mesh = new Mesh(new CylinderGeometry(radius, radius, len, 5), mat);
+  const mesh = new Mesh(new CylinderGeometry(radius, radius, len, 5), guideMaterial(color));
   mesh.position.copy(a).lerp(b, 0.5);
   mesh.quaternion.setFromUnitVectors(guideUp, guideDir.multiplyScalar(1 / len));
   g.add(mesh);
+  fades.push(mesh);
 }
 
 /** Gold beads and a connecting trail down the offshore lane, plus an orange branch to the anemone. */
-function buildTrenchGuide(): Group {
+function buildTrenchGuide(fades: Mesh[]): Group {
   const g = new Group();
-  const gold = new MeshBasicMaterial({ color: 0xffc24a, fog: false });
-  const orange = new MeshBasicMaterial({ color: 0xff5a18, fog: false });
+  const gold = 0xffc24a;
+  const orange = 0xff5a18;
   let prev: Vector3 | null = null;
-  for (let z = 11; z <= 64; z += 3.4) {
-    const x = 8.4 + (z - 11) * 0.1;
-    const p = guideBead(g, x, z, gold, 0.32, 1.7);
-    if (prev) guideLink(g, prev, p, gold, 0.045);
+  for (let z = 11; z <= 72; z += 3.4) {
+    const x = beadX(z);
+    const p = guideBead(g, fades, x, z, gold, 0.32, beadHeight(x, z));
+    if (prev) guideLink(g, fades, prev, p, gold, 0.045);
     prev = p;
   }
-  const post = new Mesh(new CylinderGeometry(0.14, 0.14, 8, 6), gold);
-  const lipX = 8;
+  const post = new Mesh(new CylinderGeometry(0.14, 0.14, 8, 6), guideMaterial(gold));
   const lipZ = 26;
+  const lipX = beadX(lipZ);
   post.position.set(lipX, terrainHeight(lipX, lipZ) + 4, lipZ);
   g.add(post);
+  fades.push(post);
   const ax = LANDMARKS.anemone.x + 3.1;
   const az = LANDMARKS.anemone.z - 2.6;
   let op: Vector3 | null = null;
@@ -262,14 +292,31 @@ function buildTrenchGuide(): Group {
     const k = i / steps;
     const x = 6.2 + (ax - 6.2) * k;
     const z = 9.2 + (az - 9.2) * k;
-    const p = guideBead(g, x, z, orange, 0.2, 1.55);
-    if (op) guideLink(g, op, p, orange, 0.035);
+    const p = guideBead(g, fades, x, z, orange, 0.2, terrainHeight(x, z) + 1.55);
+    if (op) guideLink(g, fades, op, p, orange, 0.035);
     op = p;
   }
-  const pole = new Mesh(new CylinderGeometry(0.045, 0.045, 5.5, 5), orange);
+  const pole = new Mesh(new CylinderGeometry(0.045, 0.045, 5.5, 5), guideMaterial(orange));
   pole.position.set(ax, terrainHeight(ax, az) + 2.4, az);
   g.add(pole);
+  fades.push(pole);
   return g;
+}
+
+/** Loose rocks stay off the bead line and the clownfish and turtle photo spots. */
+function onClearRoute(x: number, z: number): boolean {
+  if (z > 10 && z < 74 && Math.abs(x - beadX(z)) < 2.8) return true;
+  if (Math.hypot(x + 3, z - 17.2) < 3.2) return true;
+  const turtles: Array<[number, number]> = [
+    [-6, 20],
+    [10, 24],
+    [14, 36],
+    [-4, 38],
+  ];
+  for (const [tx, tz] of turtles) {
+    if (Math.hypot(x - tx, z - tz) < 2.4) return true;
+  }
+  return false;
 }
 
 function buildFloor(): Mesh {
@@ -446,12 +493,13 @@ function buildReef(solids: Solid[]): Mesh {
     const rx = rand();
     const ry = rand() * 4;
     const rz = rand() * 0.4;
+    if (onClearRoute(x, z)) continue;
     parts.push({
       geo: UNIT.ico,
       matrix: M(x, py, z, rx, ry, rz, s, s * 0.7, s),
       color: new Color(0x4e656c).offsetHSL(0, 0, (rand() - 0.5) * 0.06),
     });
-    if (s >= 0.55) pushRock(solids, x, py, z, rx, ry, rz, s, s * 0.7, s);
+    pushRock(solids, x, py, z, rx, ry, rz, s, s * 0.7, s);
   }
   const geo = mergeParts(parts);
   const mat = new MeshLambertMaterial({ vertexColors: true, flatShading: true });

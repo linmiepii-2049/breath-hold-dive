@@ -59,15 +59,16 @@ export const BOUNDS = {
   surfaceFeet: -1.88,
 };
 
-export function clampDiver(x: number, y: number, z: number): { x: number; y: number; z: number } {
+export function clampDiver(x: number, y: number, z: number, lift = true): { x: number; y: number; z: number } {
   let nx = clamp(x, BOUNDS.minX, BOUNDS.maxX);
   const nz = clamp(z, BOUNDS.minZ, BOUNDS.maxZ);
   if (nx > BOUNDS.wallX - 1.2 && nz > BOUNDS.wallZ0 && nz < BOUNDS.wallZ1) {
     nx = BOUNDS.wallX - 1.2;
   }
   const floor = terrainHeight(nx, nz) + 0.22;
-  let ny = Math.max(y, floor);
+  // Swimming must not snap onto a higher shelf. That snap is what rode the diver up a slope.
+  let ny = lift ? Math.max(y, floor) : y;
   ny = Math.min(ny, BOUNDS.surfaceFeet);
-  if (floor > BOUNDS.surfaceFeet) ny = floor;
+  if (lift && floor > BOUNDS.surfaceFeet) ny = floor;
   return { x: nx, y: ny, z: nz };
 }
