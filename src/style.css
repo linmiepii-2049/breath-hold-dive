@@ -121,7 +121,15 @@ button:hover:not(:disabled) { filter: brightness(1.08); }
 
 .hud-tl, .hud-tr, .hud-bc, .legend { position: absolute; }
 .hud-tl { top: 18px; left: 22px; }
-.hud-tr { top: 18px; right: 22px; text-align: right; }
+.hud-tr {
+  top: 64px; right: 22px; text-align: right;
+  background: rgba(4, 14, 20, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 12px;
+  padding: 8px 12px 10px;
+  color: #f4fffd;
+}
+.hud-tr .lbl { color: rgba(244, 255, 253, 0.72); }
 .hud-bc { left: 50%; bottom: 18px; transform: translateX(-50%); width: min(460px, calc(100% - 180px)); }
 .legend { left: 22px; bottom: 18px; font-size: 12px; color: rgba(231,246,244,.72); line-height: 1.45; max-width: 280px; }
 .num { font-size: 34px; line-height: 1; font-variant-numeric: tabular-nums; }
@@ -203,6 +211,12 @@ button:hover:not(:disabled) { filter: brightness(1.08); }
 .total-line b { font-size: 32px; font-variant-numeric: tabular-nums; }
 .comment { margin: 8px 0 12px; font-size: 15px; }
 .prize { color: #8a6230; font-weight: 650; }
+.prize.rejected { color: var(--danger); letter-spacing: 0.14em; font-size: 18px; }
+.film figcaption.bad { color: var(--danger); }
+.sens { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.sens input { flex: 1; accent-color: var(--accent); }
+.pause { pointer-events: none; }
+.pause .panel { pointer-events: auto; }
 .sum { display: grid; grid-template-columns: 1fr auto; gap: 6px 16px; margin: 12px 0; }
 .sum .net { font-size: 28px; }
 
@@ -225,7 +239,7 @@ button:hover:not(:disabled) { filter: brightness(1.08); }
 .debug-btns { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
 .debug-btns button { padding: 4px 8px; font-size: 12px; }
 .dive-debug {
-  position: absolute; top: 86px; right: 18px; z-index: 5;
+  position: absolute; top: 168px; right: 18px; z-index: 7;
   width: min(250px, calc(100% - 36px)); max-height: 50vh; overflow: auto;
   background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px;
 }

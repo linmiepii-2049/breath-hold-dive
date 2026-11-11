@@ -1,4 +1,4 @@
-import { prizeForScore } from '../src/balance.ts';
+import { BALANCE, buoyancyAccel, headAtSurface, prizeForScore } from '../src/balance.ts';
 import { scoreFrame, type FrameSubject } from '../src/scoring.ts';
 import { depthMeters, terrainHeight } from '../src/terrain.ts';
 
@@ -164,7 +164,16 @@ for (const s of [0, 20, 40, 60, 80, 100]) {
   prev = prize;
 }
 assert(prizeForScore(0) === 0, 'zero prize');
+assert(prizeForScore(59) === 0, 'under 60 pays nothing');
+assert(prizeForScore(60) > 0, '60 is accepted');
 assert(prizeForScore(100) > prizeForScore(70), 'great shots pay more');
+assert(buoyancyAccel(0) > 0.5, 'shallow water lifts');
+assert(Math.abs(buoyancyAccel(BALANCE.neutralDepth)) < 1e-6, 'neutral at 12 m');
+assert(buoyancyAccel(BALANCE.neutralDepth + BALANCE.sinkRamp) < -1, 'deep water sinks');
+assert(Math.abs(BALANCE.riseAccel / BALANCE.waterDrag - BALANCE.terminalRise) < 0.02, 'rise terminal');
+assert(Math.abs(BALANCE.sinkAccel / BALANCE.waterDrag - BALANCE.terminalSink) < 0.02, 'sink terminal');
+assert(headAtSurface(-1.88), 'a head at the surface can breathe');
+assert(!headAtSurface(-4), 'an underwater head does not refill');
 
 const entry = terrainHeight(0, 2.4);
 const garden = terrainHeight(7, 18);

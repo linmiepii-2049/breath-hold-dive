@@ -18,6 +18,8 @@ export interface SaveData {
   bestScore: number;
   dives: number;
   muted: boolean;
+  /** Mouse look multiplier. Older saves omit it and keep 1. */
+  lookSens: number;
 }
 
 export function defaultSave(): SaveData {
@@ -34,6 +36,7 @@ export function defaultSave(): SaveData {
     bestScore: 0,
     dives: 0,
     muted: false,
+    lookSens: 1,
   };
 }
 
@@ -63,6 +66,7 @@ export function loadSave(): SaveData {
     base.bestScore = clamp(Number(data.bestScore) || 0, 0, 100);
     base.dives = Math.max(0, Math.floor(Number(data.dives) || 0));
     base.muted = Boolean(data.muted);
+    base.lookSens = clamp(Number(data.lookSens) || 1, 0.45, 2.1);
     if (data.album && typeof data.album === 'object') {
       for (const [k, entry] of Object.entries(data.album)) {
         if (!entry || typeof entry.score !== 'number') continue;

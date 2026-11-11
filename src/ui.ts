@@ -1,4 +1,4 @@
-import { nextCost } from './balance';
+import { BALANCE, nextCost } from './balance';
 import { f, t } from './i18n';
 import type { ScoreBreakdown } from './scoring';
 import type { BreathState, ApneaState, BreathPhase } from './training';
@@ -23,6 +23,7 @@ export interface UIHooks {
   buy(id: GearId): void;
   endDive(): void;
   resume(): void;
+  sens(value: number): void;
   submit(): void;
   nextCard(): void;
   shore(): void;
@@ -62,6 +63,7 @@ export interface UIModel {
   mm: number;
   focus: string;
   paused: boolean;
+  lookSens: number;
   bursting: boolean;
   toasts: string[];
   flash: number;
@@ -137,6 +139,12 @@ export class GameUI {
     q('#train-done')?.addEventListener('click', () => this.hooks.finishTrain());
     q('#end-dive')?.addEventListener('click', () => this.hooks.endDive());
     q('#resume')?.addEventListener('click', () => this.hooks.resume());
+    q('#sens')?.addEventListener('input', (ev) => {
+      const value = Number((ev.target as HTMLInputElement).value);
+      this.hooks.sens(value);
+      const label = this.root.querySelector('#sens-n');
+      if (label) label.textContent = value.toFixed(2);
+    });
     q('#submit')?.addEventListener('click', () => this.hooks.submit());
     q('#next-card')?.addEventListener('click', () => this.hooks.nextCard());
     q('#to-shore')?.addEventListener('click', () => this.hooks.shore());
@@ -188,6 +196,10 @@ export class GameUI {
           <div>${t('shore.controls')}</div>
           <div>${t('shore.c1')}</div>
           <div>${t('shore.c2')}</div>
+          <div>${t('shore.c3')}</div>
+          <label class="sens">${t('shore.sens')} <b id="sens-n">${m.lookSens.toFixed(2)}</b>
+            <input id="sens" type="range" min="0.45" max="2.1" step="0.05" value="${m.lookSens}" />
+          </label>
         </div>
         ${this.debugPanel(m, false)}
         <button class="ghost tiny" id="reset">${m.resetArmed ? t('btn.resetConfirm') : t('btn.reset')}</button>
@@ -390,9 +402,11 @@ export class GameUI {
     if (m.judgePhase === 'review') {
       const frames = m.photos.length
         ? `<div class="film">${m.photos
-            .map(
-              (p, i) => `<figure><img alt="" src="${p.dataUrl}" /><figcaption>${f('judge.frame', { n: i + 1 })} · ${p.score.total}</figcaption></figure>`,
-            )
+            .map((p, i) => {
+              const bad = p.score.total < BALANCE.minAccept;
+              const tag = bad ? ` · ${t('judge.rejected')}` : '';
+              return `<figure><img alt="" src="${p.dataUrl}" /><figcaption class="${bad ? 'bad' : ''}">${f('judge.frame', { n: i + 1 })} · ${p.score.total}${tag}</figcaption></figure>`;
+            })
             .join('')}</div>`
         : `<p>${t('judge.none')}</p>`;
       return `<div class="modal"><div class="panel sheet">
@@ -406,11 +420,13 @@ export class GameUI {
     }
     if (m.judgePhase === 'summary' || m.photos.length === 0) {
       const best = m.photos.reduce((n, p) => Math.max(n, p.score.total), 0);
+      const rejected = m.photos.filter((p) => p.score.total < BALANCE.minAccept).length;
       return `<div class="modal"><div class="panel" style="width:min(460px,100%)">
         <p class="dim">${t('judge.kicker')}</p>
         <h2>${t('judge.settle')}</h2>
         <div class="sum">
           <div>${t('judge.best')}</div><div>${best}</div>
+          <div>${t('judge.rejected')}</div><div>${rejected}</div>
           <div>${t('judge.gross')}</div><div>¥${m.gross}</div>
           <div>${t('judge.fines')}</div><div>¥${m.fines}</div>
           <div>${t('judge.net')}</div><div class="net gold">¥${m.net}</div>
@@ -436,8 +452,11 @@ export class GameUI {
       ${row(t('judge.moment'), p.score.moment, 25)}
       ${row(t('judge.danger'), p.score.distanceDanger, 20)}
       <div class="total-line"><span>${t('judge.total')}</span><b>${p.score.total}</b></div>
-      <p class="comment">${t('cmt.' + p.score.comment)}</p>
-      <div class="prize">${t('judge.prize')} ¥${p.score.prize}</div>
+      ${
+        p.score.total < BALANCE.minAccept
+          ? `<div class="prize rejected">${t('judge.rejected')}</div><p class="comment">${t('judge.rejectedNote')}</p><div class="prize">${t('judge.prize')} ¥0</div>`
+          : `<p class="comment">${t('cmt.' + p.score.comment)}</p><div class="prize">${t('judge.prize')} ¥${p.score.prize}</div>`
+      }
       <div class="actions" style="margin-top:12px">
         <button class="primary" id="${last ? 'next-card' : 'next-card'}">${last ? t('btn.summary') : t('btn.next')}</button>
       </div>
