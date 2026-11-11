@@ -46,22 +46,34 @@ export const BALANCE = {
    * glides down before the slow buoyancy drift takes over.
    */
   waterDrag: 0.65,
-  /** Forward acceleration while Space is held, before fins. Cruise is about 3.3 m/s. */
-  kickAccel: 2.15,
-  /** Forward acceleration during the F kick. Cruise is about 5.7 m/s. */
-  sprintAccel: 3.7,
+  /** Seconds between fin strokes while Space is held. The fin pose uses the same clock. */
+  strokePeriod: 0.45,
+  /** Along-look speed a single tap adds. Coasts about 0.6–0.8 m before the glide dies. */
+  strokeImpulse: 0.98,
+  /** Later strokes in a hold. Smaller, so the catch can sit on cruise instead of stacking. */
+  strokePulse: 0.4,
+  /** Along-look cruise while Space is held, before fins. Reached inside one second. */
+  cruiseSpeed: 2.45,
+  /** How fast a held kick closes on cruise, per second, after cruiseCatchDelay. */
+  cruiseCatch: 7.2,
+  cruiseCatchDelay: 0.12,
+  cruiseCatchBlend: 0.14,
+  /** Along-look speed during F. 1.7 × cruiseSpeed, before fins. */
+  sprintSpeed: 4.16,
   /** Radians per mouse pixel at sensitivity 1. Right decreases yaw; up increases pitch. */
   lookYaw: 0.00115,
   lookPitch: 0.00095,
   pitchLimit: (80 * Math.PI) / 180,
   /** Association minimum. Below this the frame is returned and pays nothing. */
   minAccept: 60,
-  burstDrain: 2.35,
-  burstMult: 1.82,
-  burstTime: 1.15,
-  burstCd: 3.2,
-  swim: 3.55,
-  vertical: 2.4,
+  /** Oxygen multiplier during the sprint, so one second is obvious on the bar. */
+  burstDrain: 7.5,
+  burstMult: 1.7,
+  /** Sprint window. The HUD counts this down, then the cooldown. */
+  burstTime: 1,
+  burstCd: 3.4,
+  swim: 2.45,
+  vertical: 2.45,
   film: 5,
   trainsPerDay: 2,
   breathSeconds: 46,
@@ -111,8 +123,8 @@ export function headAtSurface(feetY: number): boolean {
 }
 
 export function swimSpeed(fins: number, burst: boolean): number {
-  const s = BALANCE.swim * (1 + BALANCE.finsSpeed * fins);
-  return burst ? s * BALANCE.burstMult : s;
+  const scale = 1 + BALANCE.finsSpeed * fins;
+  return (burst ? BALANCE.sprintSpeed : BALANCE.cruiseSpeed) * scale;
 }
 
 export function verticalSpeed(fins: number): number {

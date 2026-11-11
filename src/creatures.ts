@@ -34,6 +34,10 @@ export interface SimEvent {
   baitStart: boolean;
   turtleStart: boolean;
   orcaStart: boolean;
+  /** True on the frame a shark starts its warning circle. */
+  sharkWarn: boolean;
+  /** True while a shark is circling or charging. */
+  sharkThreat: boolean;
 }
 
 interface Boid {
@@ -114,7 +118,7 @@ export class OceanLife {
   reset(): void {
     this.t = 0;
     this.bait = 'flock';
-    this.nextBait = 18;
+    this.nextBait = 40;
     this.baitLeft = 0;
     this.chargeHit = false;
     this.orcaHit = false;
@@ -313,7 +317,14 @@ export class OceanLife {
 
   update(dt: number, diver: Vector3, aggro: boolean, events: boolean): SimEvent {
     this.t += dt;
-    const out: SimEvent = { hit: null, baitStart: false, turtleStart: false, orcaStart: false };
+    const out: SimEvent = {
+      hit: null,
+      baitStart: false,
+      turtleStart: false,
+      orcaStart: false,
+      sharkWarn: false,
+      sharkThreat: false,
+    };
     if (this.debugLock > 0) {
       this.debugLock = Math.max(0, this.debugLock - dt);
       if (this.debugOcto) {
@@ -525,18 +536,20 @@ export class OceanLife {
       this.scene.add(mesh);
     }
 
+    // Both patrols stay off the spawn lane (x ≈ 0–14, z ≈ 8–48). The shallow
+    // shark works the reef wall. The other stays in the trench.
     const sharkWps: Array<Array<[number, number, number]>> = [
       [
-        [-18, -8, 18],
-        [16, -9, 22],
-        [20, -12, 36],
-        [-8, -10, 34],
+        [20, -9, 24],
+        [26, -11, 36],
+        [22, -13, 50],
+        [18, -10, 34],
       ],
       [
-        [6, -16, 48],
-        [22, -20, 58],
-        [8, -18, 70],
-        [-8, -14, 56],
+        [22, -24, 62],
+        [26, -30, 72],
+        [-10, -26, 74],
+        [-16, -20, 60],
       ],
     ];
     sharkWps.forEach((wps, i) => {
@@ -549,7 +562,7 @@ export class OceanLife {
         z: wps[0][2],
         yaw: 0,
         state: 'patrol',
-        timer: 0,
+        timer: 8,
         speed: 2.1,
         radius: 1.45,
         optimal: 9,
@@ -745,7 +758,9 @@ export class OceanLife {
       s.mesh.visible = s.species === 'orca' ? this.orcaVisible : true;
       s.mesh.position.set(s.x, s.y, s.z);
       s.mesh.rotation.y = s.yaw;
-      animateTail(s.mesh, this.t, s.species === 'manta' ? 1.6 : 6, s.phase);
+      const tail =
+        s.species === 'manta' ? 1.6 : s.state === 'charge' ? 14 : s.state === 'warn' ? 10 : 6;
+      animateTail(s.mesh, this.t, tail, s.phase);
     }
   }
 
@@ -793,10 +808,37 @@ export class OceanLife {
     if (s.state !== 'breathe') this.turtleTold = false;
   }
 
+  /** Opening of a dive: sharks stay off the straight swim out from spawn. */
+  private calmSpawn(): boolean {
+    return this.t < 20;
+  }
+
+  private keepOffLane(s: Swimmer, dt: number): void {
+    if (!this.calmSpawn()) return;
+    const inLane = s.x > -2 && s.x < 16 && s.z > 6 && s.z < 50;
+    if (!inLane) return;
+    const away = s.x >= 6.2 ? 22 : -14;
+    s.x += (away - s.x) * Math.min(1, dt * 2.2);
+  }
+
+  /** Circle in view for a couple of seconds so the charge is a choice, not a tax. */
+  private orbitShark(s: Swimmer, diver: Vector3, dt: number): void {
+    const dx = s.x - diver.x;
+    const dz = s.z - diver.z;
+    const flat = Math.hypot(dx, dz) || 1;
+    const ang = Math.atan2(dz, dx) + 1.15;
+    const radius = 6.6;
+    const tx = diver.x + Math.cos(ang) * radius;
+    const tz = diver.z + Math.sin(ang) * radius;
+    this.seek(s, tx, diver.y + 1.15, tz, flat > 9 ? 4.2 : 3.3, dt);
+  }
+
   private stepShark(s: Swimmer, dt: number, diver: Vector3, aggro: boolean, out: SimEvent): void {
-    const scripted = s === this.sharkA && this.bait !== 'flock';
+    const scripted = s === this.sharkA && this.bait !== 'flock' && !this.calmSpawn();
     const dist = Math.hypot(s.x - diver.x, s.y - (diver.y + 1), s.z - diver.z);
+    if (s.state === 'warn' || s.state === 'charge') out.sharkThreat = true;
     if (scripted) {
+      if (s.state === 'warn' || s.state === 'charge') s.state = 'patrol';
       const tx = this.baitX + (this.bait === 'scatter' ? 8 : 0);
       const speed = this.bait === 'charge' ? 7.2 : 3.4;
       this.seek(s, tx, this.baitY, this.baitZ, speed, dt);
@@ -804,36 +846,61 @@ export class OceanLife {
         this.chargeHit = true;
         out.hit = 'shark';
         s.state = 'retreat';
-        s.timer = 3;
+        s.timer = 4;
       }
       return;
     }
     if (s.state === 'retreat') {
       s.timer -= dt;
       this.seek(s, s.x - Math.sin(s.yaw) * 4, s.y, s.z - Math.cos(s.yaw) * 4, 3.2, dt);
+      this.keepOffLane(s, dt);
       if (s.timer <= 0) {
         s.state = 'patrol';
-        s.timer = 7;
+        s.timer = 12;
       }
       return;
     }
-    if (s.state === 'chase') {
-      this.seek(s, diver.x, diver.y + 1, diver.z, 5.3, dt);
-      if (dist < 2.45) {
-        s.state = 'retreat';
-        s.timer = 3.2;
-        out.hit = out.hit ?? 'shark';
+    if (s.state === 'warn') {
+      s.timer -= dt;
+      this.orbitShark(s, diver, dt);
+      if (s.timer <= 0) {
+        if (dist < 11) {
+          s.state = 'charge';
+          s.timer = 1.6;
+        } else {
+          s.state = 'patrol';
+          s.timer = 12;
+        }
       } else if (dist > 16) {
         s.state = 'patrol';
-        s.timer = 5;
+        s.timer = 11;
+      }
+      return;
+    }
+    if (s.state === 'charge') {
+      this.seek(s, diver.x, diver.y + 1, diver.z, 6.1, dt);
+      s.timer -= dt;
+      if (dist < 2.15) {
+        s.state = 'retreat';
+        s.timer = 4.5;
+        out.hit = out.hit ?? 'shark';
+      } else if (s.timer <= 0 || dist > 14) {
+        s.state = 'patrol';
+        s.timer = 12;
       }
       return;
     }
     s.timer = Math.max(0, s.timer - dt);
-    this.followWp(s, dt, 2.2);
+    this.followWp(s, dt, 2.0);
+    this.keepOffLane(s, dt);
     const floor = terrainHeight(s.x, s.z);
     if (s.y < floor + 1.8) s.y = floor + 1.8;
-    if (aggro && s.timer <= 0 && dist < 6.4) s.state = 'chase';
+    if (aggro && !this.calmSpawn() && s.timer <= 0 && dist < 8.8) {
+      s.state = 'warn';
+      s.timer = 2.7;
+      out.sharkWarn = true;
+      out.sharkThreat = true;
+    }
   }
 
   private stepOrca(s: Swimmer, dt: number, diver: Vector3, events: boolean, out: SimEvent): void {

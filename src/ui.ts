@@ -65,6 +65,9 @@ export interface UIModel {
   paused: boolean;
   lookSens: number;
   bursting: boolean;
+  burstLeft: number;
+  burstCd: number;
+  sharkThreat: boolean;
   toasts: string[];
   flash: number;
   vignette: number;
@@ -560,14 +563,28 @@ export class GameUI {
     if (stam) stam.style.width = `${Math.max(0, m.stamina)}%`;
     const warn = this.root.querySelector('#warn');
     if (warn) {
-      warn.textContent = m.atSurface ? t('hud.surface') : m.warnReturn ? t('hud.return') : '';
+      warn.textContent = m.atSurface
+        ? t('hud.surface')
+        : m.sharkThreat
+          ? t('hud.shark')
+          : m.warnReturn
+            ? t('hud.return')
+            : '';
     }
     const pin = this.root.querySelector('#pin') as HTMLElement | null;
     if (pin) pin.style.top = `${Math.max(0, Math.min(100, (m.depth / 40) * 100))}%`;
     this.root.querySelector('#vf')?.classList.toggle('on', m.viewfinder);
     set('#focus', m.focus);
     set('#mm', f('hud.mm', { n: m.mm }));
-    this.root.querySelector('#burst')?.classList.toggle('on', m.bursting);
+    const burst = this.root.querySelector('#burst');
+    if (burst) {
+      const sprinting = m.burstLeft > 0;
+      const cooling = !sprinting && m.burstCd > 0;
+      burst.classList.toggle('on', sprinting || cooling);
+      burst.classList.toggle('cd', cooling);
+      if (sprinting) burst.textContent = `${t('hud.sprint')} ${m.burstLeft.toFixed(1)}`;
+      else if (cooling) burst.textContent = `${t('hud.cooldown')} ${m.burstCd.toFixed(1)}`;
+    }
     this.root.querySelector('#pause')?.classList.toggle('on', m.paused);
     this.root.querySelector('#end-dive')?.classList.toggle('on', m.atSurface && !m.viewfinder && !m.paused);
     const toast = this.root.querySelector('#toasts');

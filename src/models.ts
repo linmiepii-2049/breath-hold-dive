@@ -369,8 +369,8 @@ export function makeDiver(): Group {
   const fins: Mesh[] = [];
   for (const leg of [legL, legR]) {
     const fin = new Mesh(sphere, finMat);
-    fin.scale.set(0.16, 0.035, 0.34);
-    fin.position.set(0, -0.62, 0.08);
+    fin.scale.set(0.28, 0.05, 0.72);
+    fin.position.set(0, -0.78, 0.04);
     leg.add(fin);
     fins.push(fin);
   }
@@ -389,12 +389,15 @@ export function tintDiver(diver: Group, suitLevel: number, finLevel: number): vo
   suit.color.set(SUITS[Math.max(0, Math.min(3, suitLevel))]);
   const stretch = 1 + finLevel * 0.18;
   for (const fin of diver.userData.fins as Mesh[]) {
-    fin.scale.set(0.16 + finLevel * 0.02, 0.035, 0.34 * stretch);
+    fin.scale.set(0.28 + finLevel * 0.03, 0.05, 0.72 * stretch);
   }
 }
 
-/** Standing idle on the sand. In the water, a fin kick while thrusting and a quiet glide otherwise. */
-export function animateDiver(diver: Group, time: number, kicking: boolean, burst: boolean): void {
+/**
+ * Standing idle on the sand. In the water both fins sweep together.
+ * `phase` is the stroke clock: 0 is the hit, and the blade travels through about 70°.
+ */
+export function animateDiver(diver: Group, time: number, kicking: boolean, burst: boolean, phase = 0): void {
   const legL = diver.userData.legL as Group;
   const legR = diver.userData.legR as Group;
   const armL = diver.userData.armL as Group;
@@ -407,13 +410,16 @@ export function animateDiver(diver: Group, time: number, kicking: boolean, burst
     armR.rotation.x = s * 0.04;
     return;
   }
-  const rate = burst ? 13 : kicking ? 8.2 : 1.7;
-  const s = Math.sin(time * rate);
-  const amp = burst ? 0.85 : kicking ? 0.58 : 0.08;
-  legL.rotation.x = 0.42 + s * amp;
-  legR.rotation.x = 0.42 - s * amp;
-  armL.rotation.x = kicking ? -0.5 + s * 0.22 : -0.82;
-  armR.rotation.x = kicking ? -0.5 - s * 0.22 : -0.82;
+  const window = burst ? 0.34 : 0.42;
+  const u = kicking ? Math.min(1, (phase % 1) / window) : 0;
+  const sweep = Math.sin(u * Math.PI);
+  const amp = burst ? 1.5 : kicking ? 1.28 : 0.1;
+  const base = kicking ? 0.02 : 0.32;
+  legL.rotation.x = base + sweep * amp;
+  legR.rotation.x = base + sweep * amp;
+  const arm = kicking ? -0.28 - sweep * 0.4 : -0.9;
+  armL.rotation.x = arm;
+  armR.rotation.x = arm;
 }
 
 export function animateTail(group: Group, time: number, speed: number, phase = 0): void {
