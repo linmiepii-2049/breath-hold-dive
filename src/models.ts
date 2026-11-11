@@ -336,6 +336,12 @@ export function makeDiver(): Group {
   const skin = lambert(0xe0b498);
   const finMat = lambert(0x7af6e4);
   const accent = lambert(0xe36a3c);
+  // The camera stays on the diver, so fog is off and a depth tint can keep the
+  // silhouette readable after the water goes near-black.
+  for (const mat of [suit, skin, finMat, accent]) {
+    mat.fog = false;
+    mat.emissive.setHex(0x000000);
+  }
 
   const torso = new Mesh(sphere, suit);
   torso.scale.set(0.34, 0.42, 0.2);
@@ -387,12 +393,32 @@ export function makeDiver(): Group {
   }
 
   g.userData.suit = suit;
+  g.userData.skin = skin;
+  g.userData.finMat = finMat;
+  g.userData.accent = accent;
   g.userData.fins = fins;
   g.userData.armL = armL;
   g.userData.armR = armR;
   g.userData.legL = legL;
   g.userData.legR = legR;
   return g;
+}
+
+/** A quiet teal edge that strengthens with depth. The suit stays low-poly and dark. */
+export function shadeDiver(diver: Group, depth: number): void {
+  const k = Math.max(0, Math.min(1, (depth - 10) / 16));
+  const suit = diver.userData.suit as MeshLambertMaterial;
+  const skin = diver.userData.skin as MeshLambertMaterial;
+  const finMat = diver.userData.finMat as MeshLambertMaterial;
+  const accent = diver.userData.accent as MeshLambertMaterial;
+  suit.emissive.setHex(0x1c6e7c);
+  suit.emissiveIntensity = 0.05 + k * 0.72;
+  skin.emissive.setHex(0xc48a68);
+  skin.emissiveIntensity = 0.04 + k * 0.4;
+  finMat.emissive.setHex(0x7af6e4);
+  finMat.emissiveIntensity = 0.12 + k * 0.55;
+  accent.emissive.setHex(0xe36a3c);
+  accent.emissiveIntensity = 0.06 + k * 0.35;
 }
 
 export function tintDiver(diver: Group, suitLevel: number, finLevel: number): void {

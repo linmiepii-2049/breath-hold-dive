@@ -403,9 +403,13 @@ export class GameUI {
       const frames = m.photos.length
         ? `<div class="film">${m.photos
             .map((p, i) => {
-              const bad = p.score.total < BALANCE.minAccept;
-              const tag = bad ? ` · ${t('judge.rejected')}` : '';
-              return `<figure><img alt="" src="${p.dataUrl}" /><figcaption class="${bad ? 'bad' : ''}">${f('judge.frame', { n: i + 1 })} · ${p.score.total}${tag}</figcaption></figure>`;
+              const empty = !p.score.species;
+              const bad = !empty && p.score.total < BALANCE.minAccept;
+              const caption = empty
+                ? t('judge.emptyStrip')
+                : `${f('judge.frame', { n: i + 1 })} · ${p.score.total}${bad ? ` · ${t('judge.rejected')}` : ''}`;
+              const cls = empty ? 'empty' : bad ? 'bad' : '';
+              return `<figure><img alt="" src="${p.dataUrl}" /><figcaption class="${cls}">${caption}</figcaption></figure>`;
             })
             .join('')}</div>`
         : `<p>${t('judge.none')}</p>`;
@@ -420,7 +424,7 @@ export class GameUI {
     }
     if (m.judgePhase === 'summary' || m.photos.length === 0) {
       const best = m.photos.reduce((n, p) => Math.max(n, p.score.total), 0);
-      const rejected = m.photos.filter((p) => p.score.total < BALANCE.minAccept).length;
+      const rejected = m.photos.filter((p) => p.score.species && p.score.total < BALANCE.minAccept).length;
       return `<div class="modal"><div class="panel" style="width:min(460px,100%)">
         <p class="dim">${t('judge.kicker')}</p>
         <h2>${t('judge.settle')}</h2>

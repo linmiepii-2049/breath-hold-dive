@@ -26,7 +26,7 @@ import {
 } from './balance';
 import { OceanLife, type SimEvent } from './creatures';
 import { setLang, t } from './i18n';
-import { animateDiver, makeDiver, tintDiver } from './models';
+import { animateDiver, makeDiver, shadeDiver, tintDiver } from './models';
 import { scoreFrame, type FrameSubject, type ScoreBreakdown } from './scoring';
 import { albumReplaces, defaultSave, loadSave, writeSave, type SaveData } from './save';
 import { clampDiver, depthMeters, terrainHeight } from './terrain';
@@ -143,6 +143,11 @@ export class Game {
   private invuln = 0;
   private lockSurface = false;
   private blackout = false;
+  /** Seconds since oxygen hit zero. A pinned ascent still ends as a rescue. */
+  private blackoutT = 0;
+  private blackoutDeep = 0;
+  private blackoutProgress = 0;
+  private bodyPts: { x: number; y: number; z: number; r: number }[] = [];
   private shake = 0;
   private paused = false;
   private shotCd = 0;
@@ -265,6 +270,7 @@ export class Game {
     this.net = 0;
     this.committed = false;
     this.blackout = false;
+    this.blackoutT = 0;
     this.lockSurface = false;
     this.forcedT = 0;
     this.invuln = BALANCE.grace;
@@ -524,7 +530,7 @@ export class Game {
           const camDz = this.cam.position.z - this.feet.z;
           const elev = (Math.atan2(camDy, Math.hypot(camDx, camDz)) * 180) / Math.PI;
           console.info(
-            `[dive] x=${this.feet.x.toFixed(2)} y=${this.feet.y.toFixed(2)} z=${this.feet.z.toFixed(2)} depth=${depth.toFixed(2)} yaw=${this.viewYaw.toFixed(2)} pitch=${this.viewPitch.toFixed(2)} near=${nearKind}:${near.toFixed(1)} at=${nearAt} rock=${rockD.toFixed(2)}/${rockR.toFixed(2)}@${rockAt} cam=${elev.toFixed(1)}`,
+            `[dive] x=${this.feet.x.toFixed(2)} y=${this.feet.y.toFixed(2)} z=${this.feet.z.toFixed(2)} depth=${depth.toFixed(2)} yaw=${this.viewYaw.toFixed(2)} pitch=${this.viewPitch.toFixed(2)} near=${nearKind}:${near.toFixed(1)} at=${nearAt} rock=${rockD.toFixed(2)}/${rockR.toFixed(2)}@${rockAt} fit=${this.minBodyGap().toFixed(2)} cam=${elev.toFixed(1)}`,
           );
         }
       }
@@ -575,17 +581,32 @@ export class Game {
     this.o2 = Math.max(0, this.o2 - o2Drain(depth, this.save.gear.suit, this.save.efficiency, bursting) * dt);
     if (this.o2 <= 0 && !this.blackout) {
       this.blackout = true;
+      this.blackoutT = 0;
+      this.blackoutDeep = depth;
+      this.blackoutProgress = 0;
       this.lockSurface = true;
       this.stamina = Math.max(0, this.stamina - BALANCE.blackoutStamina);
       this.fines += BALANCE.blackoutFine;
       this.pushToast('toast.blackout');
     }
+    if (this.blackout) this.blackoutT += dt;
 
     this.moveDiver(dt, bursting);
-    if (headAtSurface(this.feet.y) && !this.lockSurface && !this.blackout) {
+    const depthNow = depthMeters(this.feet.y);
+    if (this.blackout && depthNow < this.blackoutDeep - 0.3) {
+      this.blackoutDeep = depthNow;
+      this.blackoutProgress = this.blackoutT;
+    }
+    // The surface band refills even after a blackout. The bar must not sit at 0%
+    // once the diver is at the surface.
+    if (depthNow < BALANCE.surfaceUi || headAtSurface(this.feet.y)) {
       this.o2 = maxOxygen(this.save.lung);
     }
-    const depthNow = depthMeters(this.feet.y);
+    // A rising blackout reaches the surface and ends there. If the ascent is
+    // pinned, or 18 s pass still underwater, the rescue ends the dive anyway.
+    if (this.blackout && depthNow >= BALANCE.surfaceUi && (this.blackoutT - this.blackoutProgress > 4 || this.blackoutT > 18)) {
+      this.finishDive();
+    }
     const bobbing = depthNow < BALANCE.surfaceUi;
     const wideSurface = depthNow < BALANCE.surfaceDepth + 0.2;
     // Reaching the surface refills oxygen and stays in the dive. The judge card
@@ -710,22 +731,22 @@ export class Game {
     this.resolveSolids();
   }
 
-  /** Capsule push along the prone body. Turtles shove; they do not bite. */
+  /** Push every solid off the head, torso, and both fin tips, including the kick sweep. */
   private resolveSolids(): void {
-    this.fillLook(this.viewYaw, this.viewPitch, this.look);
     const reach = 8;
-    for (let pass = 0; pass < 3; pass++) {
+    for (let pass = 0; pass < 4; pass++) {
+      this.fillBodyPoints();
       const rocks = this.world.solids;
       for (let i = 0; i < rocks.length; i++) {
         const s = rocks[i];
         if (Math.abs(s.x - this.feet.x) > reach || Math.abs(s.z - this.feet.z) > reach) continue;
-        this.pushBody(s.x, s.y, s.z, s.r, 'rock');
+        this.pushPoints(s.x, s.y, s.z, s.r, 'rock');
       }
       const bodies = this.life.bodies();
       for (let i = 0; i < bodies.length; i++) {
         const s = bodies[i];
         if (Math.abs(s.x - this.feet.x) > reach || Math.abs(s.z - this.feet.z) > reach) continue;
-        this.pushBody(s.x, s.y, s.z, s.r, s.kind);
+        this.pushPoints(s.x, s.y, s.z, s.r, s.kind);
       }
     }
     const clamped = clampDiver(this.feet.x, this.feet.y, this.feet.z);
@@ -733,36 +754,80 @@ export class Game {
   }
 
   /**
-   * Spheres along the prone body, plus a point down the belly, so the torso
-   * cannot rest inside a rock while the fins stay outside.
+   * Local diver space: +Y is the head (the look), +Z is the belly. Matches makeDiver.
+   * Fin tips are sampled at the glide angle and at both ends of the kick, so a
+   * head-down or turning pose cannot leave the cyan blades in the mesh.
    */
-  private pushBody(x: number, y: number, z: number, r: number, kind: string): void {
-    const lx = this.look.x;
-    const ly = this.look.y;
-    const lz = this.look.z;
-    const flat = Math.hypot(lx, lz);
-    const rx = flat < 1e-4 ? -Math.cos(this.viewYaw) : lz / flat;
-    const rz = flat < 1e-4 ? Math.sin(this.viewYaw) : -lx / flat;
-    const bx = -rz * ly;
-    const by = rz * lx - rx * lz;
-    const bz = rx * ly;
-    const along = [0.15, 0.7, 1.2];
-    for (let i = 0; i < along.length; i++) {
-      const t = along[i];
-      const px = this.feet.x + lx * t;
-      const py = this.feet.y + 0.42 + ly * t;
-      const pz = this.feet.z + lz * t;
-      this.pushOut(px, py, pz, x, y, z, r, kind, 0.62);
-      this.pushOut(px + rx * 0.3, py, pz + rz * 0.3, x, y, z, r, kind, 0.42);
-      this.pushOut(px - rx * 0.3, py, pz - rz * 0.3, x, y, z, r, kind, 0.42);
-      this.pushOut(px + bx * 0.45, py + by * 0.45, pz + bz * 0.45, x, y, z, r, kind, 0.4);
+  private fillBodyPoints(): void {
+    this.fillLook(this.viewYaw, this.viewPitch, this.look);
+    const flat = Math.hypot(this.look.x, this.look.z);
+    if (flat < 1e-4) this.bodyRight.set(-Math.cos(this.viewYaw), 0, Math.sin(this.viewYaw));
+    else this.bodyRight.set(this.look.z / flat, 0, -this.look.x / flat);
+    this.bodyBelly.crossVectors(this.bodyRight, this.look);
+    const back = 0.55;
+    const ox = this.feet.x - this.look.x * back;
+    const oy = this.feet.y + 0.42 - this.look.y * back;
+    const oz = this.feet.z - this.look.z * back;
+    const rx = this.bodyRight;
+    const lk = this.look;
+    const by = this.bodyBelly;
+    const pts = this.bodyPts;
+    let n = 0;
+    const add = (lx: number, ly: number, lz: number, r: number) => {
+      const p = pts[n] ?? (pts[n] = { x: 0, y: 0, z: 0, r: 0 });
+      p.x = ox + rx.x * lx + lk.x * ly + by.x * lz;
+      p.y = oy + rx.y * lx + lk.y * ly + by.y * lz;
+      p.z = oz + rx.z * lx + lk.z * ly + by.z * lz;
+      p.r = r;
+      n++;
+    };
+    add(0, 1.78, 0, 0.18);
+    add(0, 1.18, 0.18, 0.36);
+    add(0, 1.18, -0.14, 0.26);
+    add(0, 0.82, 0, 0.28);
+    add(0.34, 1.2, 0, 0.14);
+    add(-0.34, 1.2, 0, 0.14);
+    const stretch = 1 + 0.12 * this.save.gear.fins;
+    const blade = 0.46 * stretch;
+    const angles = [0.4, -0.2, -1.45];
+    for (const side of [-0.12, 0.12]) {
+      for (const th of angles) {
+        const c = Math.cos(th);
+        const s = Math.sin(th);
+        const samples = [-blade, 0, blade];
+        for (let i = 0; i < samples.length; i++) {
+          const ly0 = -0.64;
+          const lz0 = -0.06 + samples[i];
+          const ly = ly0 * c - lz0 * s;
+          const lz = ly0 * s + lz0 * c;
+          add(side, 0.78 + ly, lz, samples[i] === 0 ? 0.14 : 0.12);
+        }
+      }
     }
-    // Fins sit behind the chest, along the belly. Sample them or they sit in the mesh.
-    const tx = this.feet.x - lx * 0.4;
-    const ty = this.feet.y + 0.42 - ly * 0.4;
-    const tz = this.feet.z - lz * 0.4;
-    this.pushOut(tx + bx * 0.5, ty + by * 0.5, tz + bz * 0.5, x, y, z, r, kind, 0.42);
-    this.pushOut(tx, ty, tz, x, y, z, r, kind, 0.4);
+    pts.length = n;
+  }
+
+  /** Smallest gap between a body sample and a solid. Negative means the mesh can intersect. */
+  private minBodyGap(): number {
+    this.fillBodyPoints();
+    let gap = 99;
+    const solids = this.world.solids;
+    for (let i = 0; i < this.bodyPts.length; i++) {
+      const p = this.bodyPts[i];
+      for (let j = 0; j < solids.length; j++) {
+        const s = solids[j];
+        const d = Math.hypot(p.x - s.x, p.y - s.y, p.z - s.z) - s.r - p.r;
+        if (d < gap) gap = d;
+      }
+    }
+    return gap;
+  }
+
+  private pushPoints(x: number, y: number, z: number, r: number, kind: string): void {
+    for (let i = 0; i < this.bodyPts.length; i++) {
+      const p = this.bodyPts[i];
+      this.pushOut(p.x, p.y, p.z, x, y, z, r, kind, p.r);
+    }
   }
 
   private pushOut(
@@ -853,6 +918,7 @@ export class Game {
     this.diver.userData.swimming = true;
     this.diver.visible = !this.viewfinder;
     animateDiver(this.diver, this.time, kicking, bursting, this.strokePhase);
+    shadeDiver(this.diver, depthMeters(this.feet.y));
   }
 
   private follow(dt: number): void {
@@ -1138,6 +1204,7 @@ export class Game {
     this.paused = false;
     this.invuln = 12;
     this.blackout = false;
+    this.blackoutT = 0;
     this.lockSurface = false;
     this.forcedT = 0;
     this.stamina = Math.max(this.stamina, 80);
@@ -1336,6 +1403,7 @@ export class Game {
     this.diver.rotation.set(0, 0.25, 0);
     this.diver.visible = true;
     animateDiver(this.diver, this.time, false, false);
+    shadeDiver(this.diver, 0);
     this.placeShadow();
   }
 

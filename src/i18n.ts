@@ -180,6 +180,7 @@ const STR: Record<string, { zh: string; en: string }> = {
     zh: '没有拍到生物，不入图鉴。',
     en: 'No animal in the frame, so it is not added to the album.',
   },
+  'judge.emptyStrip': { zh: '空镜 · 不入图鉴', en: 'Empty frame · not in the album' },
   'judge.frame': { zh: '第 {n} 张', en: 'Frame {n}' },
   'judge.gross': { zh: '作品奖金', en: 'Photo prizes' },
   'judge.fines': { zh: '救援与损伤', en: 'Rescue & damage' },
