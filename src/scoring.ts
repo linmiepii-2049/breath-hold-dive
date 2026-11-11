@@ -1,3 +1,4 @@
+import { PerspectiveCamera, Vector3 } from 'three';
 import { prizeForScore } from './balance';
 import type { CommentId, MomentId, SpeciesId } from './types';
 import { clamp } from './util';
@@ -91,17 +92,22 @@ function distancePoints(s: FrameSubject): number {
  */
 export const AIM_HALF = 0.34;
 
-/** The reticle's subject: its center is in the bracket, or the reticle is on a solid body. */
+/**
+ * Center inside the bracket, or a solid body that overlaps it by most of its size
+ * and whose center is only just outside the edge. A school cloud only counts
+ * when its center is inside. NDC, so the drawing-buffer scale does not matter.
+ */
 export function inAimZone(s: FrameSubject): boolean {
   if (!s.inFront || Math.abs(s.ndcX) > 1.05 || Math.abs(s.ndcY) > 1.05) return false;
   if (Math.abs(s.ndcX) <= AIM_HALF && Math.abs(s.ndcY) <= AIM_HALF) return true;
-  const rx = Math.max(0.03, s.radiusNdcX);
-  const ry = Math.max(0.03, s.radiusNdcY);
-  // A school-sized cloud covers empty water. Only its center, above, can aim it.
-  if (Math.max(rx, ry) >= 0.5) return false;
-  const nx = s.ndcX / rx;
-  const ny = s.ndcY / ry;
-  return nx * nx + ny * ny <= 1 && Math.hypot(s.ndcX, s.ndcY) <= 0.72;
+  const rx = Math.max(0.02, s.radiusNdcX);
+  const ry = Math.max(0.02, s.radiusNdcY);
+  if (Math.max(rx, ry) >= 0.42) return false;
+  if (Math.abs(s.ndcX) > AIM_HALF + 0.06 || Math.abs(s.ndcY) > AIM_HALF + 0.06) return false;
+  const overlapX = Math.min(s.ndcX + rx, AIM_HALF) - Math.max(s.ndcX - rx, -AIM_HALF);
+  const overlapY = Math.min(s.ndcY + ry, AIM_HALF) - Math.max(s.ndcY - ry, -AIM_HALF);
+  if (overlapX <= 0 || overlapY <= 0) return false;
+  return overlapX / (2 * rx) >= 0.55 && overlapY / (2 * ry) >= 0.55;
 }
 
 /** A clear, framed shot of a creature that is actually doing something. */
@@ -147,8 +153,84 @@ function aimWeight(s: FrameSubject): number {
   return (onReticle ? 6 : 1) * center * closeness * (0.35 + s.clarity);
 }
 
+/** A creature in the water, before it is projected. */
+export interface AimCreature {
+  species: SpeciesId;
+  rarity: number;
+  x: number;
+  y: number;
+  z: number;
+  radius: number;
+  optimal: number;
+  moment: MomentId | null;
+  dangerous: boolean;
+  acting: boolean;
+}
+
+const projectVec = new Vector3();
+const projectForward = new Vector3();
+
+/**
+ * The one subject for this camera and this frame. NDC comes from the camera
+ * matrices only, so a 0.35 render scale and a full-resolution buffer pick
+ * the same animal when the CSS aspect is the same.
+ */
+export function computeSubject(
+  camera: PerspectiveCamera,
+  creatures: AimCreature[],
+  options?: { fog?: number; visibility?: (c: AimCreature, dist: number) => number },
+): { subject: FrameSubject | null; frames: FrameSubject[] } {
+  const frames = projectFrame(camera, creatures, options?.fog ?? 0, options?.visibility);
+  return { subject: pickFromFrame(frames), frames };
+}
+
+function projectFrame(
+  camera: PerspectiveCamera,
+  creatures: AimCreature[],
+  fog: number,
+  visibility?: (c: AimCreature, dist: number) => number,
+): FrameSubject[] {
+  camera.updateMatrixWorld();
+  camera.getWorldDirection(projectForward);
+  const forward = projectForward;
+  const half = (camera.fov * Math.PI) / 360;
+  const tanHalf = Math.tan(half) || 1e-4;
+  const out: FrameSubject[] = [];
+  for (const s of creatures) {
+    const dx = s.x - camera.position.x;
+    const dy = s.y - camera.position.y;
+    const dz = s.z - camera.position.z;
+    const dist = Math.hypot(dx, dy, dz);
+    if (dx * forward.x + dy * forward.y + dz * forward.z < 0.25) continue;
+    if (dist < 0.35) continue;
+    const fogT = Math.exp(-((fog * dist) ** 2));
+    if (fogT < 0.16) continue;
+    projectVec.set(s.x, s.y, s.z).project(camera);
+    const fill = s.radius / (dist * tanHalf);
+    const vis = visibility ? visibility(s, dist) : 1;
+    const clarity = clamp(fogT * (0.2 + 0.8 * vis), 0, 1);
+    out.push({
+      species: s.species,
+      rarity: s.rarity,
+      inFront: true,
+      ndcX: projectVec.x,
+      ndcY: projectVec.y,
+      fill,
+      radiusNdcX: fill / Math.max(0.2, camera.aspect),
+      radiusNdcY: fill,
+      distance: dist,
+      optimal: s.optimal,
+      moment: s.moment,
+      dangerous: s.dangerous,
+      acting: s.acting,
+      clarity,
+    });
+  }
+  return out;
+}
+
 /** The one subject the reticle, the focus label, and the score all use. */
-export function pickSubject(subjects: FrameSubject[]): FrameSubject | null {
+export function pickFromFrame(subjects: FrameSubject[]): FrameSubject | null {
   let best: FrameSubject | null = null;
   let bestWeight = -1;
   for (const s of subjects) {
@@ -159,11 +241,25 @@ export function pickSubject(subjects: FrameSubject[]): FrameSubject | null {
       best = s;
     }
   }
+  // A sardine on the reticle must not steal a school whose center is in the bracket.
+  if (best?.species === 'sardine' && best.rarity < 14) {
+    const cloud = subjects.find((s) => s.species === 'sardine' && s.rarity >= 14 && inFrame(s) && inAimZone(s));
+    if (cloud) return cloud;
+  }
   return best;
 }
 
+/** @deprecated Use pickFromFrame. Kept so older call sites stay on the same rule. */
+export function pickSubject(subjects: FrameSubject[]): FrameSubject | null {
+  return pickFromFrame(subjects);
+}
+
+function schoolMoving(s: FrameSubject): boolean {
+  return s.species === 'sardine' && s.rarity >= 14 && s.acting && inFrame(s) && s.clarity >= 0.45 && s.fill >= 0.08;
+}
+
 export function scoreFrame(input: ScoreInput): ScoreBreakdown {
-  const best = pickSubject(input.subjects);
+  const best = pickFromFrame(input.subjects);
   const bestComp = best ? compositionOf(best) : 0;
 
   if (!best) {
@@ -196,7 +292,7 @@ export function scoreFrame(input: ScoreInput): ScoreBreakdown {
     moment = best.fill >= 0.22 && bestComp >= 8 ? 25 : 12;
     momentId = best.moment;
     momentNote = 'special';
-  } else if (actionWorthy(best)) {
+  } else if (actionWorthy(best) || schoolMoving(best)) {
     moment = ACTION_MOMENT;
     momentNote = 'action';
   }

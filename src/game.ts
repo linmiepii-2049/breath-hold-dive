@@ -27,7 +27,7 @@ import {
 import { OceanLife, type SimEvent } from './creatures';
 import { setLang, t } from './i18n';
 import { animateDiver, diverStroke, makeDiver, shadeDiver, tintDiver } from './models';
-import { pickSubject, scoreFrame, type FrameSubject, type ScoreBreakdown } from './scoring';
+import { AIM_HALF, computeSubject, scoreFrame, type FrameSubject, type ScoreBreakdown } from './scoring';
 import { lockLandscape, prefersTouch } from './touch';
 import { albumReplaces, defaultSave, loadSave, writeSave, type SaveData } from './save';
 import { clampDiver, depthMeters, terrainHeight } from './terrain';
@@ -90,6 +90,8 @@ export class Game {
   private fpsTick = 0;
   /** 1 draws at the capped device pixel ratio. Drops when the frame rate stays under 40. */
   private renderScale = 1;
+  /** One projection per frame. The HUD and the shutter both read this. */
+  private aimNow: { subject: FrameSubject | null; frames: FrameSubject[]; score: ScoreBreakdown } | null = null;
   private lowTier = false;
   private qualityLow = 0;
   private qualityHigh = 0;
@@ -226,6 +228,7 @@ export class Game {
     this.scene.add(this.shadow);
     this.initBubbles();
 
+    document.documentElement.style.setProperty('--aim-span', `${AIM_HALF * 100}%`);
     this.cam = new PerspectiveCamera(48, 1, 0.12, 280);
     this.fpCam = new PerspectiveCamera(46, 1, 0.08, 140);
     this.fpCam.rotation.order = 'YXZ';
@@ -442,7 +445,8 @@ export class Game {
 
   debugShoot(): void {
     this.syncView();
-    this.shoot(this.grade(this.project(this.fpCam)));
+    this.refreshAim();
+    if (this.aimNow) this.shoot(this.aimNow.score);
   }
 
   debugRoster(): { species: string[]; moments: string[] } {
@@ -557,10 +561,8 @@ export class Game {
         this.shoreCamera(dt);
         this.placeDiverShore();
       }
-      if (diving && this.viewfinder && this.lmb) {
-        const frames = this.project(this.fpCam);
-        this.shoot(this.grade(frames));
-      }
+      this.refreshAim();
+      if (diving && this.viewfinder && this.lmb && this.aimNow) this.shoot(this.aimNow.score);
       const depth = this.mode === 'dive' ? depthMeters(this.feet.y) : 0;
       this.world.update(this.time, this.cam.position.y, depth);
       moveSnell(this.world.snell, this.cam.position.x, this.cam.position.z);
@@ -1211,50 +1213,27 @@ export class Game {
     return clear / samples.length;
   }
 
-  private grade(frames: FrameSubject[]): ScoreBreakdown {
-    return scoreFrame({
+  /** Project once. The label, the highlight, and a shutter in this frame all read `aimNow`. */
+  private refreshAim(): void {
+    if (!(this.mode === 'dive' && this.viewfinder)) {
+      this.aimNow = null;
+      return;
+    }
+    const fog = (this.scene.fog as FogExp2).density;
+    const { subject, frames } = computeSubject(this.fpCam, this.life.snaps, {
+      fog,
+      visibility: (c, dist) => {
+        const half = (this.fpCam.fov * Math.PI) / 360;
+        const fill = c.radius / (dist * Math.tan(half));
+        return fill > 0.1 ? this.visibilityOf(this.fpCam, c.x, c.y, c.z, c.radius, dist) : 1;
+      },
+    });
+    const score = scoreFrame({
       subjects: frames,
       depth: depthMeters(this.feet.y),
       nearestPredator: this.life.predatorDistance(this.feet.x, this.feet.y + 1, this.feet.z),
     });
-  }
-
-  private project(cam: PerspectiveCamera): FrameSubject[] {
-    const fog = (this.scene.fog as FogExp2).density;
-    cam.getWorldDirection(this.forward);
-    const out: FrameSubject[] = [];
-    for (const s of this.life.snaps) {
-      const dx = s.x - cam.position.x;
-      const dy = s.y - cam.position.y;
-      const dz = s.z - cam.position.z;
-      const dist = Math.hypot(dx, dy, dz);
-      if (dx * this.forward.x + dy * this.forward.y + dz * this.forward.z < 0.25) continue;
-      if (dist < 0.35) continue;
-      const fogT = Math.exp(-((fog * dist) ** 2));
-      if (fogT < 0.16) continue;
-      this.proj.set(s.x, s.y, s.z).project(cam);
-      const half = (cam.fov * Math.PI) / 360;
-      const fill = s.radius / (dist * Math.tan(half));
-      const vis = fill > 0.1 ? this.visibilityOf(cam, s.x, s.y, s.z, s.radius, dist) : 1;
-      const clarity = clamp(fogT * (0.2 + 0.8 * vis), 0, 1);
-      out.push({
-        species: s.species,
-        rarity: s.rarity,
-        inFront: true,
-        ndcX: this.proj.x,
-        ndcY: this.proj.y,
-        fill,
-        radiusNdcX: fill / cam.aspect,
-        radiusNdcY: fill,
-        distance: dist,
-        optimal: s.optimal,
-        moment: s.moment,
-        dangerous: s.dangerous,
-        acting: s.acting,
-        clarity,
-      });
-    }
-    return out;
+    this.aimNow = { subject, frames, score };
   }
 
   private captureAsync(score: ScoreBreakdown): void {
@@ -1719,12 +1698,11 @@ export class Game {
     let focus = '';
     let aim: UIModel['aim'] = null;
     if (this.mode === 'dive' && this.viewfinder) {
-      const frames = this.project(this.fpCam);
-      const preview = this.grade(frames);
-      const picked = pickSubject(frames);
-      focus = preview.species ? t(`sp.${preview.species}`) : t('hud.nofocus');
-      if (preview.momentId && preview.moment >= 20) focus += ` · ${t(`mo.${preview.momentId}`)}`;
-      if (picked && preview.species === picked.species) {
+      const preview = this.aimNow?.score;
+      const picked = this.aimNow?.subject ?? null;
+      focus = preview?.species ? t(`sp.${preview.species}`) : t('hud.nofocus');
+      if (preview?.momentId && preview.moment >= 20) focus += ` · ${t(`mo.${preview.momentId}`)}`;
+      if (picked && preview?.species === picked.species) {
         aim = {
           x: (picked.ndcX * 0.5 + 0.5) * 100,
           y: ((-picked.ndcY) * 0.5 + 0.5) * 100,
@@ -1870,7 +1848,12 @@ export class Game {
 
   /** Right-half drag. Same sign as the mouse: up looks up, right turns right. */
   private bindTouch(): void {
+    const onScrollUi = (t: Touch): boolean => {
+      const el = document.elementFromPoint(t.clientX, t.clientY);
+      return !!el?.closest('.modal, .debug-panel, .dock, .panel');
+    };
     const steer = (t: Touch): boolean => {
+      if (onScrollUi(t)) return false;
       const el = document.elementFromPoint(t.clientX, t.clientY);
       if (el?.closest('button, a, input, label, .rotate-overlay')) return false;
       return t.clientX >= window.innerWidth * 0.5;
@@ -1897,9 +1880,13 @@ export class Game {
     window.addEventListener(
       'touchmove',
       (e) => {
-        if (this.steerId == null) return;
+        if (this.steerId == null || this.mode !== 'dive') return;
         for (const t of Array.from(e.changedTouches)) {
           if (t.identifier !== this.steerId) continue;
+          if (onScrollUi(t)) {
+            this.steerId = null;
+            continue;
+          }
           e.preventDefault();
           this.touchDX += t.clientX - this.steerX;
           this.touchDY += t.clientY - this.steerY;

@@ -1,5 +1,6 @@
+import { PerspectiveCamera } from 'three';
 import { BALANCE, buoyancyAccel, headAtSurface, prizeForScore } from '../src/balance.ts';
-import { scoreFrame, type FrameSubject } from '../src/scoring.ts';
+import { AIM_HALF, computeSubject, scoreFrame, type AimCreature, type FrameSubject } from '../src/scoring.ts';
 import { depthMeters, terrainHeight } from '../src/terrain.ts';
 
 function assert(cond: unknown, msg: string): void {
@@ -445,6 +446,149 @@ const aimedClown = scoreFrame({
   nearestPredator: 30,
 });
 assert(aimedClown.species === 'clownfish', `reticle picks clownfish, got ${aimedClown.species}`);
+
+const movingSchool = scoreFrame({
+  subjects: [
+    subject({
+      species: 'sardine',
+      rarity: 14,
+      acting: true,
+      fill: 0.36,
+      radiusNdcX: 0.2,
+      radiusNdcY: 0.36,
+      ndcX: 0.08,
+      ndcY: -0.04,
+      distance: 8,
+      optimal: 8.5,
+    }),
+    subject({
+      species: 'sardine',
+      rarity: 10,
+      acting: false,
+      fill: 0.06,
+      radiusNdcX: 0.03,
+      radiusNdcY: 0.06,
+      ndcX: 0.02,
+      ndcY: 0.01,
+      distance: 6,
+      optimal: 2.1,
+    }),
+  ],
+  depth: 8,
+  nearestPredator: 40,
+});
+assert(movingSchool.species === 'sardine' && movingSchool.rarity === 14, `school is the subject (${movingSchool.species} ${movingSchool.rarity})`);
+assert(movingSchool.moment === 10 && movingSchool.momentNote === 'action', `moving school moment ${movingSchool.moment}`);
+
+const stillSchool = scoreFrame({
+  subjects: [
+    subject({
+      species: 'sardine',
+      rarity: 14,
+      acting: false,
+      fill: 0.36,
+      radiusNdcX: 0.2,
+      radiusNdcY: 0.36,
+      ndcX: 0.08,
+      ndcY: -0.04,
+      distance: 8,
+      optimal: 8.5,
+    }),
+  ],
+  depth: 8,
+  nearestPredator: 40,
+});
+assert(stillSchool.moment === 0, `a still school has no motion line (${stillSchool.moment})`);
+
+const baitSchool = scoreFrame({
+  subjects: [
+    subject({
+      species: 'sardine',
+      rarity: 14,
+      acting: true,
+      moment: 'baitball',
+      fill: 0.4,
+      radiusNdcX: 0.22,
+      radiusNdcY: 0.4,
+      ndcX: 0.05,
+      ndcY: 0.02,
+      distance: 7,
+      optimal: 8.5,
+    }),
+  ],
+  depth: 8,
+  nearestPredator: 12,
+});
+assert(baitSchool.momentId === 'baitball' && baitSchool.moment === 25, `bait ball stays 25 (${baitSchool.momentId} ${baitSchool.moment})`);
+
+function aimCamera(fov: number, aspect: number): PerspectiveCamera {
+  const camera = new PerspectiveCamera(fov, aspect, 0.08, 200);
+  camera.position.set(0, -8, 0);
+  camera.up.set(0, 1, 0);
+  camera.lookAt(0, -8, 10);
+  camera.updateProjectionMatrix();
+  camera.updateMatrixWorld(true);
+  return camera;
+}
+
+function reef(): AimCreature[] {
+  return [
+    {
+      species: 'parrotfish',
+      rarity: 13,
+      x: 1.15,
+      y: -8,
+      z: 8,
+      radius: 0.45,
+      optimal: 4,
+      moment: null,
+      dangerous: false,
+      acting: true,
+    },
+    {
+      species: 'sardine',
+      rarity: 14,
+      x: -4.2,
+      y: -8,
+      z: 8,
+      radius: 1.4,
+      optimal: 8.5,
+      moment: null,
+      dangerous: false,
+      acting: true,
+    },
+  ];
+}
+
+const fovWide = 1400 / 29;
+const fovTight = 1400 / 36;
+const cssAspect = 1280 / 720;
+for (const fov of [fovWide, fovTight]) {
+  for (const scale of [1, 0.35]) {
+    const bufAspect = (1280 * scale) / (720 * scale);
+    assert(Math.abs(bufAspect - cssAspect) < 1e-9, 'a uniform render scale does not change aspect');
+    const camera = aimCamera(fov, cssAspect);
+    const { subject, frames } = computeSubject(camera, reef());
+    const scored = scoreFrame({ subjects: frames, depth: 8, nearestPredator: 40 });
+    assert(subject?.species === 'parrotfish', `zoom ${fov.toFixed(1)} scale ${scale} picked ${subject?.species}`);
+    assert(scored.species === subject?.species, 'the shutter score is that same subject');
+    assert(subject != null && Math.abs(subject.ndcX) <= AIM_HALF && Math.abs(subject.ndcY) <= AIM_HALF, `subject ndc ${subject?.ndcX} ${subject?.ndcY}`);
+    const school = frames.find((s) => s.rarity === 14);
+    assert(school != null && Math.abs(school.ndcX) > AIM_HALF, `school stays outside the bracket (${school?.ndcX})`);
+    if (scale === 1) {
+      const again = computeSubject(aimCamera(fov, cssAspect), reef());
+      const shrunk = computeSubject(aimCamera(fov, (1280 * 0.35) / (720 * 0.35)), reef());
+      assert(
+        again.subject != null &&
+          shrunk.subject != null &&
+          Math.abs(again.subject.ndcX - shrunk.subject.ndcX) < 1e-6 &&
+          Math.abs(again.subject.ndcY - shrunk.subject.ndcY) < 1e-6,
+        'render scale 0.35 does not move the projection',
+      );
+    }
+  }
+}
+
 const riseAt4 = buoyancyAccel(4) / BALANCE.waterDrag;
 assert(riseAt4 >= 0.5 && riseAt4 <= 0.8, `shallow rise ${riseAt4.toFixed(2)}`);
 

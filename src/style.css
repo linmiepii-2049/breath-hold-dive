@@ -126,7 +126,13 @@ button:hover:not(:disabled) { filter: brightness(1.08); }
 .modal #play,
 .modal #result,
 .modal .film {
-  overflow: auto; min-height: 0; flex: 1 1 auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1 1 auto;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 .modal .grid { max-height: none; }
 .modal .actions { margin-top: 8px; padding-top: 8px; }
@@ -139,6 +145,10 @@ button:hover:not(:disabled) { filter: brightness(1.08); }
 .card-lite p { margin: 0 0 12px; color: #d5ebe8; line-height: 1.45; }
 
 .shop-grid, .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+@media (max-height: 430px) {
+  .shop-grid { grid-template-columns: 1fr 1fr; }
+  .item p { min-height: 0; }
+}
 .item h3 { margin: 0 0 4px; }
 .item p { margin: 0 0 8px; color: #d5ebe8; min-height: 2.6em; }
 .pips { display: flex; gap: 4px; margin-bottom: 8px; }
@@ -226,7 +236,8 @@ button:hover:not(:disabled) { filter: brightness(1.08); }
 }
 /* Matches AIM_HALF 0.34: the box is 34% of the frame on each axis. */
 .aim-bracket {
-  position: absolute; left: 50%; top: 50%; width: 34%; height: 34%;
+  position: absolute; left: 50%; top: 50%;
+  width: var(--aim-span, 34%); height: var(--aim-span, 34%);
   transform: translate(-50%, -50%); pointer-events: none;
 }
 .aim-bracket i {
@@ -318,13 +329,21 @@ button:hover:not(:disabled) { filter: brightness(1.08); }
 .keys span, button.now { border-radius: 999px; }
 .keys span { padding: 4px 8px; border: 1px solid var(--line); }
 .keys span.now, button.now { background: var(--accent); color: #062028; border-color: transparent; }
-.debug-panel { pointer-events: auto; margin-bottom: 8px; }
+.debug-panel {
+  pointer-events: auto; margin-bottom: 8px;
+  max-height: calc(100dvh - 16px); overflow: hidden;
+}
 .debug-panel summary { cursor: pointer; }
+.debug-scroll {
+  overflow-x: hidden; overflow-y: auto;
+  touch-action: pan-y; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+}
+.dive-debug .debug-scroll { max-height: calc(100dvh - 180px); }
 .debug-btns { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
 .debug-btns button { padding: 4px 8px; font-size: 12px; }
 .dive-debug {
-  position: absolute; top: 112px; left: 22px; right: auto; z-index: 7;
-  width: min(240px, 34vw); max-height: 42vh; overflow: auto;
+  position: absolute; top: 96px; left: 22px; right: auto; z-index: 7;
+  width: min(240px, 34vw); max-height: calc(100dvh - 112px); overflow: hidden;
   background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px;
 }
 #fps {
