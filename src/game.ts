@@ -281,13 +281,15 @@ export class Game {
     this.syncView();
   }
 
-  debugState(): { yaw: number; camYaw: number; viewfinder: boolean; fov: number; film: number } {
+  debugState(): { yaw: number; camYaw: number; viewfinder: boolean; fov: number; film: number; x: number; z: number } {
     return {
       yaw: this.diverYaw,
       camYaw: this.camYaw,
       viewfinder: this.viewfinder,
       fov: this.fov,
       film: this.filmLeft,
+      x: this.feet.x,
+      z: this.feet.z,
     };
   }
 
@@ -452,7 +454,8 @@ export class Game {
       let turn = 0;
       if (this.keys.has('KeyA')) turn -= 1;
       if (this.keys.has('KeyD')) turn += 1;
-      this.diverYaw += turn * BALANCE.turnRate * dt;
+      // +yaw swings the nose toward +X, which is screen-left while looking down +Z.
+      this.diverYaw -= turn * BALANCE.turnRate * dt;
     }
     if (this.keys.has('KeyW')) iz += 1;
     if (this.keys.has('KeyS')) iz -= 1;
@@ -464,8 +467,8 @@ export class Game {
     const yaw = this.viewfinder ? this.viewYaw : this.diverYaw;
     const fx = Math.sin(yaw);
     const fz = Math.cos(yaw);
-    const rx = Math.cos(yaw);
-    const rz = -Math.sin(yaw);
+    const rx = -Math.cos(yaw);
+    const rz = Math.sin(yaw);
     let wx = fx * iz + rx * ix;
     let wz = fz * iz + rz * ix;
     if (this.lockSurface) {
@@ -526,7 +529,7 @@ export class Game {
     if (this.mode === 'dive' && !this.paused) {
       const lookX = clamp(this.mouseDX, -64, 64);
       const lookY = clamp(this.mouseDY, -48, 48);
-      this.viewYaw += lookX * 0.0012;
+      this.viewYaw -= lookX * 0.0012;
       this.viewPitch -= lookY * 0.001;
       this.viewPitch = clamp(this.viewPitch, -1.05, 0.8);
       const range = BALANCE.lensFov[this.save.gear.lens];
