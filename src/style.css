@@ -195,11 +195,11 @@ button:hover:not(:disabled) { filter: brightness(1.08); }
   text-shadow: 0 0 18px rgba(255, 60, 70, 0.7);
 }
 #ui.danger #vignette {
-  background: radial-gradient(circle at center, rgba(255, 48, 56, 0.2) 0%, rgba(190, 16, 28, 0.34) 42%, rgba(140, 0, 16, 0.78) 100%);
+  background: radial-gradient(circle at center, transparent 0 46%, rgba(160, 16, 28, 0.28) 68%, rgba(120, 0, 16, 0.72) 100%);
   animation: danger-pulse 0.8s ease-in-out infinite;
 }
 #ui.charging #vignette {
-  background: radial-gradient(circle at center, rgba(255, 36, 44, 0.26) 0%, rgba(200, 8, 20, 0.46) 36%, rgba(140, 0, 12, 0.86) 100%);
+  background: radial-gradient(circle at center, transparent 0 42%, rgba(180, 12, 24, 0.34) 66%, rgba(130, 0, 12, 0.78) 100%);
 }
 @keyframes danger-pulse {
   0%, 100% { opacity: 0.62; }
@@ -554,6 +554,47 @@ body.touch .vf-tag {
   letter-spacing: 0.04em;
   z-index: 6;
 }
+/* Camera open: bars sit on the top edge, and the species line sits under the bracket. */
+body.touch #ui.aiming .hud-bc {
+  top: calc(6px + env(safe-area-inset-top, 0px));
+  bottom: auto;
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  width: min(220px, 38vw);
+  padding: 4px 8px 5px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 6px;
+  row-gap: 2px;
+  align-items: center;
+}
+body.touch #ui.aiming .hud-bc .lbl {
+  margin: 0 !important;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+}
+body.touch #ui.aiming .hud-bc .bar { margin-top: 0; }
+body.touch #ui.aiming .hud-bc .warn {
+  grid-column: 1 / -1;
+  min-height: 0;
+  margin-top: 2px;
+  font-size: 12px;
+}
+body.touch #ui.aiming .vf-tag {
+  top: calc(50% + 19%);
+  left: 50%;
+  right: auto;
+  bottom: auto;
+  transform: translateX(-50%);
+  text-align: center;
+  max-width: min(260px, 64vw);
+}
+body.touch #ui.aiming .hud-tl .num { font-size: 26px; }
+body.touch #ui.aiming .toasts {
+  top: calc(58px + env(safe-area-inset-top, 0px));
+}
+body.touch #ui.aiming .steer-zone { display: none; }
 body.touch .toasts {
   top: calc(6px + env(safe-area-inset-top, 0px));
   width: min(210px, 42vw);

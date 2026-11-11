@@ -602,7 +602,7 @@ export class OceanLife {
         z: turtleWps[i][2],
         yaw: 0.4,
         state: 'cruise',
-        timer: i === 0 ? 16 : 999,
+        timer: i === 0 ? 8 : 999,
         speed: 1.05,
         radius: 0.85,
         optimal: 7,
@@ -898,30 +898,34 @@ export class OceanLife {
       s.timer -= dt;
       if (s.timer <= 0) {
         s.state = 'up';
-        this.turtleAimX = diver.x + 1.1;
-        this.turtleAimZ = diver.z + 2.5;
+        s.timer = 0;
+        this.turtleAimX = diver.x + 1.2;
+        this.turtleAimZ = diver.z + 2.6;
       }
     } else if (s.state === 'up') {
-      // Keep the breathing spot just in front of the diver until the turtle is close.
-      const lead = Math.hypot(this.turtleAimX - s.x, this.turtleAimZ - s.z);
-      if (lead > 4.5) {
-        this.turtleAimX = diver.x + 1.1;
-        this.turtleAimZ = diver.z + 2.5;
-      }
+      // Rise the whole way. Waiting until the turtle was already close left it
+      // stuck in 'up' whenever the diver was not standing still.
+      s.timer += dt;
       const dx = this.turtleAimX - s.x;
       const dz = this.turtleAimZ - s.z;
-      const horiz = Math.hypot(dx, dz);
-      if (horiz > 0.5) {
-        const step = Math.min(horiz, 2.4 * dt);
+      const horiz = Math.hypot(dx, dz) || 1;
+      if (horiz > 0.4) {
+        const step = Math.min(horiz, 3.2 * dt);
         s.x += (dx / horiz) * step;
         s.z += (dz / horiz) * step;
         s.yaw = Math.atan2(dx, dz);
       }
-      if (horiz < 4.5) s.y += 0.8 * dt;
-      if (s.y > -0.7 && horiz < 4.5) {
+      s.y += Math.min(2.1 * dt, Math.max(0, -0.5 - s.y));
+      if (s.y > -0.85 && horiz < 5.5) {
+        s.y = -0.55;
         s.state = 'breathe';
         s.timer = 10;
+      } else if (s.timer > 9) {
+        s.x = this.turtleAimX;
+        s.z = this.turtleAimZ;
         s.y = -0.55;
+        s.state = 'breathe';
+        s.timer = 10;
       }
     } else if (s.state === 'breathe') {
       s.x = this.turtleAimX + Math.sin(this.t * 0.7) * 0.45;
@@ -938,7 +942,7 @@ export class OceanLife {
       }
     }
     const turtleDist = Math.hypot(s.x - diver.x, s.y - diver.y, s.z - diver.z);
-    if (s.state === 'breathe' && !this.turtleTold && turtleDist < 16) {
+    if (s.state === 'breathe' && !this.turtleTold && turtleDist < 24) {
       this.turtleTold = true;
       out.turtleStart = true;
     }
@@ -1278,22 +1282,43 @@ export class OceanLife {
     if (s.y > -1.7 && s.species !== 'turtle') s.y = -1.7;
   }
 
+  /** Surface the lead turtle just in front of the diver and hold the breath. */
+  startBreathInFront(x: number, z: number): { x: number; y: number; z: number } {
+    const s = this.turtleA;
+    s.state = 'breathe';
+    s.timer = 10;
+    s.x = x + 1.3;
+    s.y = -0.55;
+    s.z = z + 2.6;
+    s.yaw = Math.atan2(x - s.x, z - s.z);
+    this.turtleAimX = s.x;
+    this.turtleAimZ = s.z;
+    this.turtleTold = false;
+    s.mesh.visible = true;
+    s.mesh.position.set(s.x, s.y, s.z);
+    return { x: s.x, y: s.y, z: s.z };
+  }
+
   private stepOctopus(dt: number, diver: Vector3, out: SimEvent): void {
-    // Six seconds in the open, then back in the crevice. Long enough to turn and shoot.
-    const cycle = this.t % 14;
-    this.displaying = cycle > 8;
-    const homeX = LANDMARKS.octopus.x;
-    const homeZ = LANDMARKS.octopus.z;
-    const showX = homeX + 2.5;
-    const showZ = homeZ + 0.4;
-    const tx = this.displaying ? showX : homeX;
-    const tz = this.displaying ? showZ : homeZ;
-    const floor = terrainHeight(tx, tz);
-    const ty = floor + (this.displaying ? 1.25 : 0.5);
-    const blend = Math.min(1, dt * (this.displaying ? 2.2 : 1.1));
-    this.octoX += (tx - this.octoX) * blend;
-    this.octoY += (ty - this.octoY) * blend;
-    this.octoZ += (tz - this.octoZ) * blend;
+    // Six seconds of colour in the open, then a still pose clear of the crevice rocks.
+    // The idle pose does not drift, so a viewfinder can lock a stationary animal.
+    const cycle = this.t % 18;
+    this.displaying = cycle > 12;
+    const homeX = LANDMARKS.octopus.x + 2.35;
+    const homeZ = LANDMARKS.octopus.z - 1.15;
+    const showX = homeX + 0.7;
+    const showZ = homeZ + 0.15;
+    if (!this.displaying) {
+      this.octoX = homeX;
+      this.octoZ = homeZ;
+      this.octoY = terrainHeight(homeX, homeZ) + 1.15;
+    } else {
+      const floor = terrainHeight(showX, showZ);
+      const blend = Math.min(1, dt * 2.2);
+      this.octoX += (showX - this.octoX) * blend;
+      this.octoY += (floor + 1.35 - this.octoY) * blend;
+      this.octoZ += (showZ - this.octoZ) * blend;
+    }
     const color = this.displaying ? OCTO_SHOW[Math.floor(this.t / 0.85) % OCTO_SHOW.length] : 0x6a5348;
     this.octopus.userData.displayColor = color;
     animateTail(this.octopus, this.t, 1.4, 0);
@@ -1424,7 +1449,7 @@ export class OceanLife {
       x: this.octoX,
       y: this.octoY + 0.4,
       z: this.octoZ,
-      radius: 0.85,
+      radius: 1.05,
       optimal: 4.2,
       moment: null,
       dangerous: false,

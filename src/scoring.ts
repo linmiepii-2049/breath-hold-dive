@@ -97,13 +97,13 @@ export const AIM_HALF = 0.34;
  * and whose center is only just outside the edge. A school cloud only counts
  * when its center is inside. NDC, so the drawing-buffer scale does not matter.
  */
-export function inAimZone(s: FrameSubject): boolean {
+export function inAimZone(s: FrameSubject, half = AIM_HALF): boolean {
   if (!s.inFront || Math.abs(s.ndcX) > 1.05 || Math.abs(s.ndcY) > 1.05) return false;
-  if (Math.abs(s.ndcX) <= AIM_HALF && Math.abs(s.ndcY) <= AIM_HALF) return true;
+  if (Math.abs(s.ndcX) <= half && Math.abs(s.ndcY) <= half) return true;
   const rx = Math.max(0.02, s.radiusNdcX);
   const ry = Math.max(0.02, s.radiusNdcY);
   if (Math.max(rx, ry) >= 0.42) return false;
-  if (Math.abs(s.ndcX) > AIM_HALF + 0.06 || Math.abs(s.ndcY) > AIM_HALF + 0.06) return false;
+  if (Math.abs(s.ndcX) > half + 0.08 || Math.abs(s.ndcY) > half + 0.08) return false;
   const overlapX = Math.min(s.ndcX + rx, AIM_HALF) - Math.max(s.ndcX - rx, -AIM_HALF);
   const overlapY = Math.min(s.ndcY + ry, AIM_HALF) - Math.max(s.ndcY - ry, -AIM_HALF);
   if (overlapX <= 0 || overlapY <= 0) return false;
@@ -179,10 +179,10 @@ const projectForward = new Vector3();
 export function computeSubject(
   camera: PerspectiveCamera,
   creatures: AimCreature[],
-  options?: { fog?: number; visibility?: (c: AimCreature, dist: number) => number },
+  options?: { fog?: number; visibility?: (c: AimCreature, dist: number) => number; aimHalf?: number },
 ): { subject: FrameSubject | null; frames: FrameSubject[] } {
   const frames = projectFrame(camera, creatures, options?.fog ?? 0, options?.visibility);
-  return { subject: pickFromFrame(frames), frames };
+  return { subject: pickFromFrame(frames, options?.aimHalf), frames };
 }
 
 function projectFrame(
@@ -230,8 +230,11 @@ function projectFrame(
   return out;
 }
 
-/** The one subject the reticle, the focus label, and the score all use. */
-export function pickFromFrame(subjects: FrameSubject[]): FrameSubject | null {
+/**
+ * The one subject the reticle, the focus label, and the score all use.
+ * A still animal is a subject. Motion only changes the moment line.
+ */
+export function pickFromFrame(subjects: FrameSubject[], half = AIM_HALF): FrameSubject | null {
   // A shell that covers the bracket center is the subject even when its own center sits just outside.
   let best: FrameSubject | null = null;
   let bestFill = -1;
@@ -245,7 +248,7 @@ export function pickFromFrame(subjects: FrameSubject[]): FrameSubject | null {
   if (!best) {
     let bestWeight = -1;
     for (const s of subjects) {
-      if (!inFrame(s) || !inAimZone(s)) continue;
+      if (!inFrame(s) || !inAimZone(s, half)) continue;
       const weight = aimWeight(s);
       if (weight > bestWeight) {
         bestWeight = weight;
@@ -256,7 +259,7 @@ export function pickFromFrame(subjects: FrameSubject[]): FrameSubject | null {
   // A sardine on the reticle must not steal a school whose center is in the bracket.
   if (best?.species === 'sardine' && best.rarity < 14) {
     const cloud = subjects.find(
-      (s) => s.species === 'sardine' && s.rarity >= 14 && inFrame(s) && (coversReticle(s) || inAimZone(s)),
+      (s) => s.species === 'sardine' && s.rarity >= 14 && inFrame(s) && (coversReticle(s) || inAimZone(s, half)),
     );
     if (cloud) return cloud;
   }
