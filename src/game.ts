@@ -101,8 +101,12 @@ export class Game {
   private lowTier = false;
   private qualityLow = 0;
   private qualityHigh = 0;
-  /** Extra gap so the visible mesh stays off sand and rock. */
-  private readonly bodyClear = 0.04;
+  /** Gap outside each rock so the suit and fins are not embedded in the mesh. */
+  private readonly rockClear = 0.3;
+  /** Sand sits closer. The slope resolve must not throw the diver upward. */
+  private readonly sandClear = 0.08;
+  /** Metres of upward terrain correction still allowed this frame. */
+  private terrainBudget = 0.06;
   private pendingShots = 0;
   private wantJudge = false;
   private wantJudgeAt = 0;
@@ -676,6 +680,7 @@ export class Game {
   }
 
   private simDive(dt: number): void {
+    this.life.noteHeading(this.viewYaw, dt);
     this.invuln = Math.max(0, this.invuln - dt);
     this.shotCd = Math.max(0, this.shotCd - dt);
     this.forcedT = Math.max(0, this.forcedT - dt);
@@ -844,8 +849,8 @@ export class Game {
     const nextX = this.feet.x + this.velX * dt;
     const nextY = this.feet.y + this.velY * dt;
     const nextZ = this.feet.z + this.velZ * dt;
-    const clamped = clampDiver(nextX, nextY, nextZ);
-    if (clamped.y > nextY + 0.02 && this.velY < 0) this.velY = 0;
+    // Do not lift onto the floor here. A rising shelf used to teleport the diver up it.
+    const clamped = clampDiver(nextX, nextY, nextZ, false);
     if (clamped.y < nextY - 0.02 && this.velY > 0) this.velY = 0;
     this.feet.set(clamped.x, clamped.y, clamped.z);
     this.resolveSolids();
@@ -853,13 +858,14 @@ export class Game {
 
   /** Push every solid off the head, shoulders, torso, and fin tips. */
   private resolveSolids(): void {
+    this.terrainBudget = 0.06;
     for (let pass = 0; pass < 5; pass++) {
-      const clamped = clampDiver(this.feet.x, this.feet.y, this.feet.z);
+      const clamped = clampDiver(this.feet.x, this.feet.y, this.feet.z, false);
       this.feet.set(clamped.x, clamped.y, clamped.z);
       const rocks = this.world.solids;
       for (let i = 0; i < rocks.length; i++) {
         const s = rocks[i];
-        if (Math.abs(s.x - this.feet.x) > s.r + 2.2 || Math.abs(s.z - this.feet.z) > s.r + 2.2) continue;
+        if (Math.abs(s.x - this.feet.x) > s.r + 3.2 || Math.abs(s.z - this.feet.z) > s.r + 3.2) continue;
         this.fillBodyPoints();
         this.pushBox(s, 'rock');
       }
@@ -935,6 +941,13 @@ export class Game {
       const fin = rotX(-0.64, -0.06, stroke.leg);
       add(side, 0.78 + fin.y, fin.z, 0.46 * stretch + skin);
     }
+    // Capsule from the shoulders down through the fins, so a rock cannot sit in a gap between samples.
+    for (let i = 0; i <= 6; i++) {
+      const t = i / 6;
+      const y = 1.32 + (0.12 - 1.32) * t;
+      const z = -0.04 * t;
+      add(0, y, z, 0.38 + skin);
+    }
     pts.length = n;
   }
 
@@ -971,16 +984,55 @@ export class Game {
     return Math.max(ox, oy, oz) - body;
   }
 
-  /** Keep the head, shoulders, torso, and fins above the sand on a slope. */
+  /**
+   * Resolve the body out along the slope normal. Upward correction is capped
+   * and the rest is pushed horizontally, and the contact never adds upward speed.
+   */
   private pushTerrain(): void {
     this.fillBodyPoints();
-    let gap = 0;
+    const span = 0.55;
+    let penBest = 0;
+    let nx = 0;
+    let ny = 1;
+    let nz = 0;
     for (let i = 0; i < this.bodyPts.length; i++) {
       const p = this.bodyPts[i];
-      const pen = terrainHeight(p.x, p.z) + p.r + this.bodyClear - p.y;
-      if (pen > gap) gap = pen;
+      const hL = terrainHeight(p.x - span, p.z);
+      const hR = terrainHeight(p.x + span, p.z);
+      const hD = terrainHeight(p.x, p.z - span);
+      const hU = terrainHeight(p.x, p.z + span);
+      let gx = hL - hR;
+      let gy = span * 2;
+      let gz = hD - hU;
+      const len = Math.hypot(gx, gy, gz) || 1;
+      gx /= len;
+      gy /= len;
+      gz /= len;
+      const pen = terrainHeight(p.x, p.z) + this.sandClear + p.r - p.y;
+      if (pen > penBest) {
+        penBest = pen;
+        nx = gx;
+        ny = gy;
+        nz = gz;
+      }
     }
-    if (gap > 0) this.applyPush(0, 1, 0, gap, 'sand');
+    if (penBest <= 0) return;
+    const up = Math.max(ny, 0);
+    let along = penBest;
+    // A tall shelf does not carry the diver up it. Spend at most a few centimetres
+    // of upward correction this frame and push the rest back down the slope.
+    if (up > 0.02 && up * along > this.terrainBudget) {
+      const keep = this.terrainBudget / up;
+      const drop = along - keep;
+      along = keep;
+      this.terrainBudget = 0;
+      const h = Math.hypot(nx, nz) || 1;
+      this.feet.x += (nx / h) * drop;
+      this.feet.z += (nz / h) * drop;
+    } else {
+      this.terrainBudget = Math.max(0, this.terrainBudget - up * along);
+    }
+    if (along > 0) this.applyPush(nx, ny, nz, along, 'sand');
   }
 
   /** One correction: the sample that is deepest in the box. */
@@ -991,7 +1043,7 @@ export class Game {
     let nz = 0;
     for (let i = 0; i < this.bodyPts.length; i++) {
       const p = this.bodyPts[i];
-      const sep = this.boxPush(p.x, p.y, p.z, p.r + this.bodyClear, s);
+      const sep = this.boxPush(p.x, p.y, p.z, p.r + this.rockClear, s);
       if (sep && sep.gap > gap) {
         gap = sep.gap;
         nx = sep.nx;
@@ -1069,7 +1121,7 @@ export class Game {
       const dy = p.y - y;
       const dz = p.z - z;
       const dist = Math.hypot(dx, dy, dz);
-      const min = p.r + r + this.bodyClear;
+      const min = p.r + r + this.sandClear;
       if (dist >= min) continue;
       const len = dist < 1e-4 ? 1 : dist;
       const need = min - (dist < 1e-4 ? 0 : dist);
@@ -1084,6 +1136,7 @@ export class Game {
   }
 
   private applyPush(nx: number, ny: number, nz: number, gap: number, kind: string): void {
+    const vy0 = this.velY;
     const floor = terrainHeight(this.feet.x, this.feet.z);
     if (this.feet.y <= floor + 0.35 && ny < -0.2) {
       const horiz = Math.hypot(nx, nz);
@@ -1106,6 +1159,8 @@ export class Game {
       this.velY -= vn * ny;
       this.velZ -= vn * nz;
     }
+    // Sliding along a slope must not turn a downward glide into an upward launch.
+    if (this.velY > vy0 && this.velY > 0) this.velY = Math.max(vy0, 0);
     if (this.debugOn && !this.pushedKind.has(kind)) {
       this.pushedKind.add(kind);
       console.info(`[push] ${kind} gap=${gap.toFixed(2)}`);
@@ -1156,21 +1211,24 @@ export class Game {
     const rz = Math.sin(this.camYaw);
     const aimY = this.feet.y + BALANCE.followAim;
     const lift = BALANCE.followLift;
-    let desiredX = this.feet.x - fx * back + rx * side;
-    let desiredZ = this.feet.z - fz * back + rz * side;
-    let desiredY = aimY + lift;
-    const clearance = 0.85;
-    let floorY = terrainHeight(desiredX, desiredZ) + clearance;
-    if (desiredY < floorY) {
-      // Slide back along the same ray so the 45° elevation survives the sand.
-      const extra = Math.min(10, floorY - desiredY);
-      const scale = (lift + extra) / lift;
-      desiredX = this.feet.x - fx * back * scale + rx * side * scale;
-      desiredZ = this.feet.z - fz * back * scale + rz * side * scale;
-      desiredY = aimY + lift * scale;
-      floorY = terrainHeight(desiredX, desiredZ) + clearance;
-      if (desiredY < floorY) desiredY = floorY;
+    const place = (s: number) => ({
+      x: this.feet.x - fx * back * s + rx * side * s,
+      y: aimY + lift * s,
+      z: this.feet.z - fz * back * s + rz * side * s,
+    });
+    // Pull closer along the same 45° ray when the rear spot is inside the terrain.
+    // Setting y to the floor flattened the camera from ~45° down toward 26°.
+    let scale = 1;
+    for (let i = 0; i < 10; i++) {
+      const tryAt = place(scale);
+      if (tryAt.y >= terrainHeight(tryAt.x, tryAt.z) + 0.85) break;
+      scale *= 0.62;
     }
+    scale = Math.max(0.34, scale);
+    const parked = place(scale);
+    const desiredX = parked.x;
+    const desiredY = parked.y;
+    const desiredZ = parked.z;
     if (immediate) {
       this.camPos.set(desiredX, desiredY, desiredZ);
     } else {

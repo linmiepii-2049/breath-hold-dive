@@ -110,16 +110,14 @@ export function inAimZone(s: FrameSubject): boolean {
   return overlapX / (2 * rx) >= 0.55 && overlapY / (2 * ry) >= 0.55;
 }
 
-/** A clear, framed shot of a creature that is actually doing something. */
+/** Motion credit. Distance stays in composition and danger, not in this line. */
 const ACTION_MOMENT = 10;
 
-function actionWorthy(s: FrameSubject): boolean {
-  if (!s.acting || !inFrame(s)) return false;
-  // A manta's body is a wide thin disc, so a readable glide fills less of the
-  // frame than a turtle at the same distance. It still earns the motion line.
-  const wide = s.species === 'manta';
-  if (s.clarity < (wide ? 0.45 : 0.62) || s.fill < (wide ? 0.05 : 0.12)) return false;
-  return compositionOf(s) >= (wide ? 8 : 12);
+/** The reticle sits inside this creature's projected body. */
+function coversReticle(s: FrameSubject): boolean {
+  if (!s.inFront || s.fill < 0.04) return false;
+  if (Math.abs(s.ndcX) > 1.2 || Math.abs(s.ndcY) > 1.2) return false;
+  return Math.abs(s.ndcX) <= s.radiusNdcX && Math.abs(s.ndcY) <= s.radiusNdcY;
 }
 
 /** The moment animal has to be plainly in the picture, not a speck, a haze blob, or a shape behind weed. */
@@ -234,19 +232,32 @@ function projectFrame(
 
 /** The one subject the reticle, the focus label, and the score all use. */
 export function pickFromFrame(subjects: FrameSubject[]): FrameSubject | null {
+  // A shell that covers the bracket center is the subject even when its own center sits just outside.
   let best: FrameSubject | null = null;
-  let bestWeight = -1;
+  let bestFill = -1;
   for (const s of subjects) {
-    if (!inFrame(s) || !inAimZone(s)) continue;
-    const weight = aimWeight(s);
-    if (weight > bestWeight) {
-      bestWeight = weight;
+    if (!coversReticle(s)) continue;
+    if (s.fill > bestFill) {
+      bestFill = s.fill;
       best = s;
+    }
+  }
+  if (!best) {
+    let bestWeight = -1;
+    for (const s of subjects) {
+      if (!inFrame(s) || !inAimZone(s)) continue;
+      const weight = aimWeight(s);
+      if (weight > bestWeight) {
+        bestWeight = weight;
+        best = s;
+      }
     }
   }
   // A sardine on the reticle must not steal a school whose center is in the bracket.
   if (best?.species === 'sardine' && best.rarity < 14) {
-    const cloud = subjects.find((s) => s.species === 'sardine' && s.rarity >= 14 && inFrame(s) && inAimZone(s));
+    const cloud = subjects.find(
+      (s) => s.species === 'sardine' && s.rarity >= 14 && inFrame(s) && (coversReticle(s) || inAimZone(s)),
+    );
     if (cloud) return cloud;
   }
   return best;
@@ -255,10 +266,6 @@ export function pickFromFrame(subjects: FrameSubject[]): FrameSubject | null {
 /** @deprecated Use pickFromFrame. Kept so older call sites stay on the same rule. */
 export function pickSubject(subjects: FrameSubject[]): FrameSubject | null {
   return pickFromFrame(subjects);
-}
-
-function schoolMoving(s: FrameSubject): boolean {
-  return s.species === 'sardine' && s.rarity >= 14 && s.acting && inFrame(s) && s.clarity >= 0.45 && s.fill >= 0.08;
 }
 
 export function scoreFrame(input: ScoreInput): ScoreBreakdown {
@@ -295,7 +302,9 @@ export function scoreFrame(input: ScoreInput): ScoreBreakdown {
     moment = best.fill >= 0.22 && bestComp >= 8 ? 25 : 12;
     momentId = best.moment;
     momentNote = 'special';
-  } else if (actionWorthy(best) || schoolMoving(best)) {
+  } else if (best.acting) {
+    // Any creature that is actually moving earns the motion line. How far it is
+    // already changed composition and the distance score.
     moment = ACTION_MOMENT;
     momentNote = 'action';
   }

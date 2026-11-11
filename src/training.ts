@@ -37,7 +37,7 @@ const PHASES: BreathPhase[] = ['inhale', 'hold', 'exhale'];
 /** Seconds per inhale / hold / exhale beat. */
 export const BREATH_BEAT = 1.92;
 /** Unscored lead-in so the first beat is not lost while reading. */
-export const BREATH_INTRO = 2.4;
+export const BREATH_INTRO = 1.2;
 /** Fraction of the beat where the marker sits in the bright band. */
 export const BREATH_WINDOW_START = 0.5;
 export const BREATH_WINDOW_END = 0.88;
