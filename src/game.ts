@@ -80,8 +80,9 @@ export class Game {
   private cam: PerspectiveCamera;
   private fpCam: PerspectiveCamera;
   private diver: ReturnType<typeof makeDiver>;
-  private fillLight = new PointLight(0xe7fff6, 5.2, 24, 1);
-  private nearLight = new PointLight(0xd7fff2, 2.6, 12, 1);
+  private fillLight = new PointLight(0xf4fff8, 9.5, 22, 1);
+  private nearLight = new PointLight(0xfff6e4, 5.4, 14, 1);
+  private rimLight = new PointLight(0xffe7c2, 4.2, 16, 1);
   private forceLow = false;
   private linedUp = false;
   private shadow: Mesh;
@@ -171,6 +172,7 @@ export class Game {
   private invuln = 0;
   private lockSurface = false;
   private blackout = false;
+  private blackoutHits = 0;
   /** Seconds since oxygen hit zero. A pinned ascent still ends as a rescue. */
   private blackoutT = 0;
   private blackoutDeep = 0;
@@ -227,6 +229,7 @@ export class Game {
     this.scene.add(this.diver);
     this.scene.add(this.fillLight);
     this.scene.add(this.nearLight);
+    this.scene.add(this.rimLight);
     this.shadow = new Mesh(
       new CircleGeometry(0.7, 14),
       new MeshBasicMaterial({ color: 0x021016, transparent: true, opacity: 0.28, depthWrite: false }),
@@ -349,6 +352,7 @@ export class Game {
     this.net = 0;
     this.committed = false;
     this.blackout = false;
+    this.blackoutHits = 0;
     this.blackoutT = 0;
     this.lockSurface = false;
     this.forcedT = 0;
@@ -503,13 +507,19 @@ export class Game {
     if (this.wantJudge && this.mode === 'dive' && (this.pendingShots === 0 || performance.now() - this.wantJudgeAt > 2500)) {
       this.enterJudge();
     }
+    if (this.mode === 'dive' && (this.blackout || this.lockSurface)) {
+      this.paused = false;
+      this.needsSteer = false;
+    }
     if (
       !this.touch &&
       this.mode === 'dive' &&
       !this.wantJudge &&
       !this.life.framing() &&
       !document.pointerLockElement &&
-      !this.paused
+      !this.paused &&
+      !this.blackout &&
+      !this.lockSurface
     ) {
       if (this.unlockedAt === 0) this.unlockedAt = performance.now();
       else if (performance.now() - this.unlockedAt > 280) this.holdForSteer();
@@ -642,10 +652,17 @@ export class Game {
     const renderCam = this.mode === 'dive' && this.viewfinder ? this.fpCam : this.cam;
     this.fillLight.position.set(
       this.feet.x * 0.35 + renderCam.position.x * 0.65,
-      this.feet.y + 1.2,
+      this.feet.y + 1.6,
       this.feet.z * 0.35 + renderCam.position.z * 0.65,
     );
-    this.nearLight.position.set(this.feet.x, this.feet.y + 2.3, this.feet.z);
+    this.nearLight.position.set(this.feet.x, this.feet.y + 2.6, this.feet.z);
+    const side = Math.sin(this.viewYaw);
+    const ahead = Math.cos(this.viewYaw);
+    this.rimLight.position.set(
+      renderCam.position.x - ahead * 0.4 + side * 1.4,
+      renderCam.position.y + 0.6,
+      renderCam.position.z + side * 0.4 + ahead * 1.4,
+    );
     try {
       this.renderer.render(this.scene, renderCam);
     } catch (err) {
@@ -677,10 +694,13 @@ export class Game {
     this.o2 = Math.max(0, this.o2 - o2Drain(depth, this.save.gear.suit, this.save.efficiency, bursting) * dt);
     if (this.o2 <= 0 && !this.blackout) {
       this.blackout = true;
+      this.blackoutHits += 1;
       this.blackoutT = 0;
       this.blackoutDeep = depth;
       this.blackoutProgress = 0;
       this.lockSurface = true;
+      this.paused = false;
+      this.needsSteer = false;
       this.stamina = Math.max(0, this.stamina - BALANCE.blackoutStamina);
       this.fines += BALANCE.blackoutFine;
       this.pushToast('toast.blackout');
@@ -700,7 +720,11 @@ export class Game {
     }
     // A rising blackout reaches the surface and ends there. If the ascent is
     // pinned, or 18 s pass still underwater, the rescue ends the dive anyway.
-    if (this.blackout && depthNow >= BALANCE.surfaceUi && (this.blackoutT - this.blackoutProgress > 4 || this.blackoutT > 18)) {
+    if (
+      this.blackout &&
+      (this.surfaced() && this.blackoutT > 0.8 ||
+        (depthNow >= BALANCE.surfaceUi && (this.blackoutT - this.blackoutProgress > 4 || this.blackoutT > 18)))
+    ) {
       this.finishDive();
     }
     const wideSurface = depthNow < BALANCE.surfaceDepth + 0.2;
@@ -1359,9 +1383,10 @@ export class Game {
     if (this.mode !== 'dive') return;
     this.wantJudge = false;
     this.mode = 'judge';
-    this.judgePhase = 'review';
+    this.judgePhase = this.photos.length === 0 ? 'summary' : 'review';
     this.judgeIndex = 0;
     this.committed = false;
+    if (this.photos.length === 0) this.commit();
     this.nonce++;
   }
 
@@ -1451,7 +1476,7 @@ export class Game {
 
   private keep(p: Shot): void {
     const s = p.score;
-    if (s.species && s.total > 0) this.putAlbum(s.species, s.total, p.dataUrl, s.comment);
+    if (s.species && s.comment !== 'empty' && s.total > 0) this.putAlbum(s.species, s.total, p.dataUrl, s.comment);
     if (s.momentId && s.moment >= 12) this.putAlbum(`m:${s.momentId}`, s.total, p.dataUrl, s.comment);
   }
 
@@ -1699,8 +1724,10 @@ export class Game {
   private pushMoment(key: string, match: (s: { x: number; y: number; z: number; moment: string | null; species: string }) => boolean): void {
     let toast = this.toasts.find((item) => item.key === key);
     if (!toast) {
-      toast = { key, ttl: 5.8 };
+      toast = { key, ttl: key === 'toast.turtle' ? 11 : 5.8 };
       this.toasts.push(toast);
+    } else if (key === 'toast.turtle') {
+      toast.ttl = Math.max(toast.ttl, 11);
     }
     toast.watch = match;
     const at = this.life.snaps.find(match);
@@ -1712,7 +1739,10 @@ export class Game {
     for (const toast of this.toasts) {
       if (!toast.watch) continue;
       const at = this.life.snaps.find(toast.watch);
-      if (at) toast.text = `${t(toast.key)} · ${this.bearing(at.x, at.y, at.z)}`;
+      if (at) {
+        toast.text = `${t(toast.key)} · ${this.bearing(at.x, at.y, at.z)}`;
+        if (toast.key === 'toast.turtle') toast.ttl = Math.max(toast.ttl, 1.6);
+      }
     }
   }
 
@@ -1724,7 +1754,7 @@ export class Game {
     if (this.mode === 'dive' && this.viewfinder) {
       const preview = this.aimNow?.score;
       const picked = this.aimNow?.subject ?? null;
-      focus = preview?.species ? t(`sp.${preview.species}`) : t('hud.nofocus');
+      focus = preview?.species ? `${t(`sp.${preview.species}`)} · ${t('hud.lined')}` : t('hud.nofocus');
       if (preview?.momentId && preview.moment >= 20) focus += ` · ${t(`mo.${preview.momentId}`)}`;
       if (picked && preview?.species === picked.species) {
         aim = {
@@ -1791,6 +1821,7 @@ export class Game {
       judgeIndex: this.judgeIndex,
       gross: this.gross,
       fines: this.fines,
+      blackoutHits: this.blackoutHits,
       net: this.net,
       album: this.save.album,
       fpsOn: this.fpsOn,

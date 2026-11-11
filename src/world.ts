@@ -169,12 +169,12 @@ export function createWorld(): World {
       const diveT = Math.min(1, diverDepth / 42);
       const under = Math.min(1, Math.max(0, (0.4 - camY) / 4));
       const waterMix = Math.max(under, diveT * 0.85);
-      fog.color.copy(air).lerp(shallow, Math.min(1, waterMix * 1.05)).lerp(deep, diveT * 0.38);
-      const haze = 0.004 + waterMix * 0.004 + diveT * 0.007;
-      // Within about 8 m the water stays readable on every tier. The low tier is thinner.
-      fog.density = Math.min(detail ? 0.018 : 0.011, haze);
-      hemi.intensity = 1.08 - diveT * 0.08;
-      sun.intensity = 1.35 - diveT * 0.1;
+      fog.color.copy(air).lerp(shallow, Math.min(1, waterMix * 1.05)).lerp(deep, diveT * 0.16);
+      const haze = 0.002 + waterMix * 0.0016 + diveT * 0.0028;
+      // Near the diver the water stays thin on every tier. The low tier is thinner still.
+      fog.density = detail ? haze : haze * 0.55;
+      hemi.intensity = 1.45 - diveT * 0.06;
+      sun.intensity = 1.7 - diveT * 0.08;
       const floorMat = floor.material as ShaderMaterial;
       floorMat.uniforms.uNear.value.set(diverX, diverY, diverZ);
       floorMat.uniforms.uTime.value = time;
@@ -216,23 +216,59 @@ export function createWorld(): World {
   };
 }
 
-/** Gold beads down the offshore lane, so the trench mouth is a line you can follow. */
+const guideUp = new Vector3(0, 1, 0);
+const guideDir = new Vector3();
+
+function guideBead(g: Group, x: number, z: number, mat: MeshBasicMaterial, radius: number, lift: number): Vector3 {
+  const y = terrainHeight(x, z) + lift;
+  const m = new Mesh(new SphereGeometry(radius, 10, 8), mat);
+  m.position.set(x, y, z);
+  g.add(m);
+  return m.position.clone();
+}
+
+function guideLink(g: Group, a: Vector3, b: Vector3, mat: MeshBasicMaterial, radius: number): void {
+  guideDir.copy(b).sub(a);
+  const len = guideDir.length();
+  if (len < 0.05) return;
+  const mesh = new Mesh(new CylinderGeometry(radius, radius, len, 5), mat);
+  mesh.position.copy(a).lerp(b, 0.5);
+  mesh.quaternion.setFromUnitVectors(guideUp, guideDir.multiplyScalar(1 / len));
+  g.add(mesh);
+}
+
+/** Gold beads and a connecting trail down the offshore lane, plus an orange branch to the anemone. */
 function buildTrenchGuide(): Group {
   const g = new Group();
-  const mat = new MeshBasicMaterial({ color: 0xffb000, fog: false });
-  const bead = new SphereGeometry(0.26, 8, 6);
-  for (let z = 22; z <= 62; z += 4) {
-    const x = 7.2 + (z - 22) * 0.15;
-    const y = terrainHeight(x, z) + 1.7;
-    const m = new Mesh(bead, mat);
-    m.position.set(x, y, z);
-    g.add(m);
+  const gold = new MeshBasicMaterial({ color: 0xffc24a, fog: false });
+  const orange = new MeshBasicMaterial({ color: 0xff5a18, fog: false });
+  let prev: Vector3 | null = null;
+  for (let z = 11; z <= 64; z += 3.4) {
+    const x = 8.4 + (z - 11) * 0.1;
+    const p = guideBead(g, x, z, gold, 0.32, 1.7);
+    if (prev) guideLink(g, prev, p, gold, 0.045);
+    prev = p;
   }
-  const post = new Mesh(new CylinderGeometry(0.09, 0.09, 7, 6), mat);
+  const post = new Mesh(new CylinderGeometry(0.14, 0.14, 8, 6), gold);
   const lipX = 8;
   const lipZ = 26;
-  post.position.set(lipX, terrainHeight(lipX, lipZ) + 3.4, lipZ);
+  post.position.set(lipX, terrainHeight(lipX, lipZ) + 4, lipZ);
   g.add(post);
+  const ax = LANDMARKS.anemone.x + 3.1;
+  const az = LANDMARKS.anemone.z - 2.6;
+  let op: Vector3 | null = null;
+  const steps = 7;
+  for (let i = 0; i <= steps; i++) {
+    const k = i / steps;
+    const x = 6.2 + (ax - 6.2) * k;
+    const z = 9.2 + (az - 9.2) * k;
+    const p = guideBead(g, x, z, orange, 0.2, 1.55);
+    if (op) guideLink(g, op, p, orange, 0.035);
+    op = p;
+  }
+  const pole = new Mesh(new CylinderGeometry(0.045, 0.045, 5.5, 5), orange);
+  pole.position.set(ax, terrainHeight(ax, az) + 2.4, az);
+  g.add(pole);
   return g;
 }
 
@@ -276,7 +312,7 @@ function buildFloor(): Mesh {
         vec3 base = mix(rock, sand, smoothstep(0.58, 0.92, flatN));
         float deepT = clamp((-vWorld.y - 8.0) / 36.0, 0.0, 1.0);
         deepT = deepT * deepT * (3.0 - 2.0 * deepT);
-        base = mix(base, vec3(0.28, 0.46, 0.48), deepT * 0.32);
+        base = mix(base, vec3(0.42, 0.62, 0.64), deepT * 0.16);
         float n1 = sin(vWorld.x * 0.45 + uTime * 0.85) * sin(vWorld.z * 0.38 - uTime * 0.65);
         float n2 = sin(vWorld.x * 0.2 - uTime * 0.4 + vWorld.z * 0.17);
         float ca = smoothstep(0.4, 1.3, n1 + n2);
@@ -284,11 +320,14 @@ function buildFloor(): Mesh {
         ca *= shallow * flatN;
         vec3 sunDir = normalize(vec3(-0.28, 0.92, 0.25));
         float lam = clamp(dot(normalize(vNormalW), sunDir), 0.0, 1.0);
-        vec3 col = base * (0.55 + 0.62 * lam) + vec3(0.55, 0.75, 0.68) * ca * 1.15;
-        col *= mix(1.0, 0.9, deepT);
+        float rim = pow(1.0 - clamp(dot(normalize(vNormalW), sunDir), 0.0, 1.0), 1.4);
+        vec3 col = base * (0.72 + 0.55 * lam) + vec3(0.62, 0.84, 0.76) * ca * 1.2;
+        col += vec3(0.18, 0.28, 0.26) * rim * (1.0 - deepT * 0.35);
+        col *= mix(1.0, 0.97, deepT);
         float nearD = distance(vWorld, uNear);
-        float nearK = 1.0 - smoothstep(2.5, 9.0, nearD);
-        col += vec3(0.08, 0.11, 0.09) * nearK;
+        float nearK = 1.0 - smoothstep(2.0, 11.0, nearD);
+        col += vec3(0.2, 0.26, 0.2) * nearK;
+        col = mix(col, col * vec3(1.12, 1.18, 1.14) + vec3(0.05, 0.07, 0.05), nearK);
         gl_FragColor = vec4(col, 1.0);
         #include <fog_fragment>
       }
@@ -374,7 +413,7 @@ function buildReef(solids: Solid[]): Mesh {
   }
   // Landmark rocks so the octopus crevice and anemone read clearly.
   // The anemone's open side faces the spawn, so a level shot is not a rock.
-  const rockColor = new Color(0x5d7278);
+  const rockColor = new Color(0x8eafb6);
   for (const spot of [LANDMARKS.octopus, LANDMARKS.anemone]) {
     const floor = terrainHeight(spot.x, spot.z);
     const anemone = spot === LANDMARKS.anemone;

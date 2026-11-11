@@ -158,9 +158,7 @@ function finishBreath(state: BreathState): void {
 
 export function forceFinishBreath(state: BreathState): void {
   if (state.done) return;
-  state.done = true;
-  state.accuracy = state.total > 0 ? state.hits / state.total : 0;
-  state.gain = 0;
+  finishBreath(state);
 }
 
 export function forceFinishApnea(state: ApneaState): void {

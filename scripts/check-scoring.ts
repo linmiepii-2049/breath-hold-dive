@@ -449,6 +449,27 @@ const aimedClown = scoreFrame({
 });
 assert(aimedClown.species === 'clownfish', `reticle picks clownfish, got ${aimedClown.species}`);
 
+const glidingManta = scoreFrame({
+  subjects: [
+    subject({
+      species: 'manta',
+      rarity: 18,
+      acting: true,
+      fill: 0.08,
+      clarity: 0.8,
+      radiusNdcX: 0.14,
+      radiusNdcY: 0.06,
+      ndcX: 0.2,
+      ndcY: -0.12,
+      distance: 11,
+      optimal: 12,
+    }),
+  ],
+  depth: 14,
+  nearestPredator: 30,
+});
+assert(glidingManta.species === 'manta' && glidingManta.moment === 10, `a swimming manta earns motion (${glidingManta.moment})`);
+
 const movingSchool = scoreFrame({
   subjects: [
     subject({

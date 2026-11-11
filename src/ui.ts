@@ -89,6 +89,8 @@ export interface UIModel {
   judgeIndex: number;
   gross: number;
   fines: number;
+  /** Times oxygen hit zero this dive. Settlement names the stamina cut and the fine. */
+  blackoutHits: number;
   net: number;
   album: Record<string, AlbumEntry | undefined>;
   fpsOn: boolean;
@@ -163,7 +165,10 @@ export class GameUI {
     this.press(q('#touch-pause'), () => this.hooks.pause());
     this.press(q('#touch-sprint'), () => this.hooks.sprint());
     this.press(q('#touch-cam'), () => this.hooks.camera());
-    this.press(q('#touch-shutter'), () => this.hooks.shutter());
+    this.press(q('#touch-shutter'), () => {
+      if (this.root.classList.contains('aiming')) this.hooks.shutter();
+      else this.hooks.camera();
+    });
     this.press(q('#touch-end'), () => this.hooks.endDive());
     this.press(q('#touch-end-paused'), () => this.hooks.endDive());
     this.holdButton(q('#touch-kick'), (down) => this.hooks.kick(down));
@@ -502,6 +507,7 @@ export class GameUI {
         <div class="card-body">
           <p class="dim">${t('judge.kicker')}</p>
           <h2>${t('judge.review')}</h2>
+          ${m.blackoutHits > 0 ? `<p>${t('judge.blackout')} · ${f('judge.blackoutVal', { n: m.blackoutHits * BALANCE.blackoutStamina, fine: m.blackoutHits * BALANCE.blackoutFine })}</p>` : ''}
           ${frames}
         </div>
         <div class="actions">
@@ -521,6 +527,7 @@ export class GameUI {
             <div>${t('judge.rejected')}</div><div>${rejected}</div>
             <div>${t('judge.gross')}</div><div>¥${m.gross}</div>
             <div>${t('judge.fines')}</div><div>¥${m.fines}</div>
+            ${m.blackoutHits > 0 ? `<div>${t('judge.blackout')}</div><div>${f('judge.blackoutVal', { n: m.blackoutHits * BALANCE.blackoutStamina, fine: m.blackoutHits * BALANCE.blackoutFine })}</div>` : ''}
             <div>${t('judge.net')}</div><div class="net gold">¥${Math.max(0, m.net)}</div>
             <div>${t('judge.balance')}</div><div>¥${Math.round(m.money)}</div>
           </div>
@@ -579,7 +586,7 @@ export class GameUI {
       if (text) {
         const acc = Math.round(s.accuracy * 100);
         const gain = Math.round(s.gain * 1000) / 10;
-        text.textContent = `${f('train.acc', { n: acc })} · ${gain > 0 ? f('train.lungUp', { n: gain }) : t('train.capped')}`;
+        text.textContent = `${t('train.done')} ${f('train.acc', { n: acc })} · ${gain > 0 ? f('train.lungUp', { n: gain }) : t('train.capped')}`;
       }
       return;
     }
@@ -591,7 +598,13 @@ export class GameUI {
     };
     set('#phase', s.intro > 0 ? t('train.ready') : t(`train.phase.${phase}`));
     set('#how', t(this.touch ? 'train.howTouch' : 'train.how'));
-    set('#time', s.intro > 0 ? t('train.ready') : f('train.time', { n: Math.max(0, Math.ceil(s.duration - s.t)) }));
+    const live = s.total > 0 ? Math.round((s.hits / s.total) * BALANCE.breathGain * 1000) / 10 : 0;
+    set(
+      '#time',
+      s.intro > 0
+        ? t('train.ready')
+        : `${f('train.time', { n: Math.max(0, Math.ceil(s.duration - s.t)) })} · ${f('train.lungUp', { n: live })}`,
+    );
     const zone = this.root.querySelector('#zone') as HTMLElement | null;
     if (zone) {
       zone.style.left = `${BREATH_WINDOW_START * 100}%`;
@@ -699,13 +712,23 @@ export class GameUI {
         ? t(m.touch ? 'hud.pauseHintTouch' : 'hud.pauseHint')
         : t(m.touch ? 'hud.pauseSteerTouch' : 'hud.pauseSteer');
     }
+    const danger = m.sharkThreat || m.sharkCharging;
+    this.root.classList.toggle('danger', danger);
     this.root.classList.toggle('charging', m.sharkCharging);
+    const shutter = this.root.querySelector('#touch-shutter');
+    if (shutter) {
+      shutter.textContent = m.viewfinder ? t('touch.shutter') : t('touch.shutterWait');
+      shutter.classList.toggle('ready', m.viewfinder);
+    }
     const toast = this.root.querySelector('#toasts');
     if (toast) toast.innerHTML = m.toasts.map((item) => `<div class="toast">${item.text ?? t(item.key)}</div>`).join('');
     const vig = this.root.querySelector('#vignette') as HTMLElement | null;
     const black = this.root.querySelector('#blackout') as HTMLElement | null;
     const flash = this.root.querySelector('#flash') as HTMLElement | null;
-    if (vig) vig.style.opacity = String(m.sharkCharging ? Math.max(m.vignette, 0.38) : m.vignette);
+    if (vig) {
+      if (danger) vig.style.opacity = '';
+      else vig.style.opacity = String(m.vignette);
+    }
     if (black) black.style.opacity = String(m.blackout);
     if (flash) flash.style.opacity = String(m.flash);
   }
