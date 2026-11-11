@@ -183,6 +183,37 @@ export class OceanLife {
     this.sharkLog = on;
   }
 
+  /**
+   * Put the reef shark on its warning ring at `meters` from the chest.
+   * The ring, the charge, and the sprint escape are the same ones a real approach uses.
+   * Only the debug hook calls this.
+   */
+  armWarn(cx: number, cy: number, cz: number, meters: number): void {
+    const dist = Math.min(11.2, Math.max(6.2, meters));
+    const shark = this.sharkA;
+    shark.state = 'warn';
+    shark.timer = 1.05;
+    shark.speed = 2.1;
+    this.orbitAnchor.set(shark, { x: cx, y: cy, z: cz, radius: dist, ang: 0 });
+    this.chargeDir.delete(shark);
+    this.holdCircle(shark, 0);
+    this.t = Math.max(this.t, 40);
+    this.bait = 'flock';
+    this.nextBait = 99999;
+    this.baitLeft = 0;
+    this.sprintHold = 0;
+    for (const other of this.swimmers) {
+      if (other.species !== 'shark' || other === shark) continue;
+      other.state = 'patrol';
+      other.timer = 30;
+      other.x = 80;
+      other.z = 80;
+      this.orbitAnchor.delete(other);
+      this.chargeDir.delete(other);
+    }
+    if (this.sharkLog) console.info(`[shark] debug warn at ${dist.toFixed(1)} m`);
+  }
+
   /** The first photo ends the debug hold, so a teleport does not trap the diver. */
   releaseFrame(): void {
     this.debugLock = 0;

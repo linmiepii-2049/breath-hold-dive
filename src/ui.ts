@@ -68,6 +68,8 @@ export interface UIModel {
   viewfinder: boolean;
   mm: number;
   focus: string;
+  /** Gold box on the animal the reticle will score, in viewfinder percent. */
+  aim: { x: number; y: number; w: number; h: number } | null;
   paused: boolean;
   /** Phone or tablet layout. Desktop stays false. */
   touch: boolean;
@@ -314,7 +316,11 @@ export class GameUI {
     return `<details class="debug-panel${floating ? ' dive-debug' : ''}">
       <summary>${t('debug.title')}</summary>
       <p class="dim">${t('debug.hint')}</p>
-      <div class="debug-btns">${species}${moments}</div>
+      <div class="debug-btns">
+        <button data-debug="air">${t('debug.air')}</button>
+        <button data-debug="warn">${t('debug.warn')}</button>
+        ${species}${moments}
+      </div>
     </details>`;
   }
 
@@ -442,6 +448,8 @@ export class GameUI {
         <i class="h" style="top:33.33%"></i>
         <i class="h" style="top:66.66%"></i>
         <div class="reticle"></div>
+        <div class="aim-bracket" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+        <div class="aim-lock" id="aim-lock"></div>
         <div class="vf-tag" id="focus"></div>
         <div class="vf-mm" id="mm"></div>
       </div>
@@ -657,6 +665,16 @@ export class GameUI {
     if (pin) pin.style.top = `${Math.max(0, Math.min(100, (m.depth / 40) * 100))}%`;
     this.root.querySelector('#vf')?.classList.toggle('on', m.viewfinder);
     set('#focus', m.focus);
+    const lock = this.root.querySelector('#aim-lock') as HTMLElement | null;
+    if (lock) {
+      if (m.aim) {
+        lock.classList.add('on');
+        lock.style.left = `${m.aim.x}%`;
+        lock.style.top = `${m.aim.y}%`;
+        lock.style.width = `${m.aim.w}%`;
+        lock.style.height = `${m.aim.h}%`;
+      } else lock.classList.remove('on');
+    }
     set('#mm', f('hud.mm', { n: m.mm }));
     const burst = this.root.querySelector('#burst');
     if (burst) {

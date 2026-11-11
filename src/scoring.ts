@@ -85,6 +85,25 @@ function distancePoints(s: FrameSubject): number {
   return 1.5;
 }
 
+/**
+ * Focus bracket, in NDC. 0.34 is about a third of the frame and still holds a
+ * subject placed on the thirds. The viewfinder draws this box.
+ */
+export const AIM_HALF = 0.34;
+
+/** The reticle's subject: its center is in the bracket, or the reticle is on a solid body. */
+export function inAimZone(s: FrameSubject): boolean {
+  if (!s.inFront || Math.abs(s.ndcX) > 1.05 || Math.abs(s.ndcY) > 1.05) return false;
+  if (Math.abs(s.ndcX) <= AIM_HALF && Math.abs(s.ndcY) <= AIM_HALF) return true;
+  const rx = Math.max(0.03, s.radiusNdcX);
+  const ry = Math.max(0.03, s.radiusNdcY);
+  // A school-sized cloud covers empty water. Only its center, above, can aim it.
+  if (Math.max(rx, ry) >= 0.5) return false;
+  const nx = s.ndcX / rx;
+  const ny = s.ndcY / ry;
+  return nx * nx + ny * ny <= 1 && Math.hypot(s.ndcX, s.ndcY) <= 0.72;
+}
+
 /** A clear, framed shot of a creature that is actually doing something. */
 const ACTION_MOMENT = 10;
 
@@ -97,10 +116,11 @@ function actionWorthy(s: FrameSubject): boolean {
 /** The moment animal has to be plainly in the picture, not a speck, a haze blob, or a shape behind weed. */
 function momentWorthy(s: FrameSubject): boolean {
   if (!s.moment || !inFrame(s)) return false;
-  if (s.clarity < 0.62) return false;
   const orca = s.species === 'orca' || s.moment === 'orcaPass';
-  if (s.fill < (orca ? 0.24 : 0.18)) return false;
-  const limit = orca ? 0.62 : 0.86;
+  if (s.clarity < (orca ? 0.62 : 0.55)) return false;
+  // A turtle at the prompt's range (~16 m, default lens) fills about a tenth of the frame.
+  if (s.fill < (orca ? 0.24 : 0.085)) return false;
+  const limit = orca ? 0.62 : 0.74;
   if (Math.abs(s.ndcX) > limit || Math.abs(s.ndcY) > limit) return false;
   const edgeX = Math.abs(s.ndcX) + s.radiusNdcX * 0.45;
   const edgeY = Math.abs(s.ndcY) + s.radiusNdcY * 0.45;
@@ -127,19 +147,24 @@ function aimWeight(s: FrameSubject): number {
   return (onReticle ? 6 : 1) * center * closeness * (0.35 + s.clarity);
 }
 
-export function scoreFrame(input: ScoreInput): ScoreBreakdown {
+/** The one subject the reticle, the focus label, and the score all use. */
+export function pickSubject(subjects: FrameSubject[]): FrameSubject | null {
   let best: FrameSubject | null = null;
   let bestWeight = -1;
-  let bestComp = 0;
-  for (const s of input.subjects) {
-    if (!inFrame(s)) continue;
+  for (const s of subjects) {
+    if (!inFrame(s) || !inAimZone(s)) continue;
     const weight = aimWeight(s);
     if (weight > bestWeight) {
       bestWeight = weight;
       best = s;
-      bestComp = compositionOf(s);
     }
   }
+  return best;
+}
+
+export function scoreFrame(input: ScoreInput): ScoreBreakdown {
+  const best = pickSubject(input.subjects);
+  const bestComp = best ? compositionOf(best) : 0;
 
   if (!best) {
     return {
@@ -165,21 +190,14 @@ export function scoreFrame(input: ScoreInput): ScoreBreakdown {
 
   let moment = 0;
   let momentId: MomentId | null = null;
-  let momentFill = -1;
   let momentNote: ScoreBreakdown['momentNote'] = 'none';
-  for (const s of input.subjects) {
-    if (!momentWorthy(s) || !s.moment) continue;
-    const pts = s.fill >= 0.22 && compositionOf(s) >= 8 ? 25 : 12;
-    if (pts > moment || (pts === moment && s.fill > momentFill)) {
-      moment = pts;
-      momentId = s.moment;
-      momentFill = s.fill;
-      momentNote = 'special';
-    }
-  }
-  if (moment < ACTION_MOMENT && actionWorthy(best)) {
+  // The special moment belongs to the aimed animal, not to whoever else is in the corner.
+  if (best.moment && momentWorthy(best)) {
+    moment = best.fill >= 0.22 && bestComp >= 8 ? 25 : 12;
+    momentId = best.moment;
+    momentNote = 'special';
+  } else if (actionWorthy(best)) {
     moment = ACTION_MOMENT;
-    momentId = null;
     momentNote = 'action';
   }
 
