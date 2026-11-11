@@ -222,7 +222,6 @@ export class Game {
         this.holdPointer = down;
       },
       buy: (id) => this.buy(id),
-      endDive: () => this.finishDive(),
       resume: () => {
         if (this.mode !== 'dive') {
           this.paused = false;
@@ -508,14 +507,22 @@ export class Game {
             }
           }
           let rockD = 99;
+          let rockR = 0;
           const solids = this.world.solids;
           for (let i = 0; i < solids.length; i++) {
             const s = solids[i];
             const d = Math.hypot(s.x - this.feet.x, s.y - (this.feet.y + 0.4), s.z - this.feet.z);
-            if (d < rockD) rockD = d;
+            if (d < rockD) {
+              rockD = d;
+              rockR = s.r;
+            }
           }
+          const camDx = this.cam.position.x - this.feet.x;
+          const camDy = this.cam.position.y - (this.feet.y + BALANCE.followAim);
+          const camDz = this.cam.position.z - this.feet.z;
+          const elev = (Math.atan2(camDy, Math.hypot(camDx, camDz)) * 180) / Math.PI;
           console.info(
-            `[dive] x=${this.feet.x.toFixed(2)} y=${this.feet.y.toFixed(2)} z=${this.feet.z.toFixed(2)} depth=${depth.toFixed(2)} yaw=${this.viewYaw.toFixed(2)} pitch=${this.viewPitch.toFixed(2)} near=${nearKind}:${near.toFixed(1)} at=${nearAt} rock=${rockD.toFixed(1)}`,
+            `[dive] x=${this.feet.x.toFixed(2)} y=${this.feet.y.toFixed(2)} z=${this.feet.z.toFixed(2)} depth=${depth.toFixed(2)} yaw=${this.viewYaw.toFixed(2)} pitch=${this.viewPitch.toFixed(2)} near=${nearKind}:${near.toFixed(1)} at=${nearAt} rock=${rockD.toFixed(2)}/${rockR.toFixed(2)} cam=${elev.toFixed(1)}`,
           );
         }
       }
@@ -550,12 +557,13 @@ export class Game {
   private simDive(dt: number): void {
     this.invuln = Math.max(0, this.invuln - dt);
     this.shotCd = Math.max(0, this.shotCd - dt);
-    this.burstCd = Math.max(0, this.burstCd - dt);
-    this.burstT = Math.max(0, this.burstT - dt);
     this.forcedT = Math.max(0, this.forcedT - dt);
-    if (this.kickQueued && this.burstCd <= 0 && !this.lockSurface) {
+    const wasBurst = this.burstT > 0;
+    this.burstT = Math.max(0, this.burstT - dt);
+    if (wasBurst && this.burstT <= 0) this.burstCd = BALANCE.burstCd;
+    else if (!wasBurst) this.burstCd = Math.max(0, this.burstCd - dt);
+    if (this.kickQueued && this.burstT <= 0 && this.burstCd <= 0 && !this.lockSurface) {
       this.burstT = BALANCE.burstTime;
-      this.burstCd = BALANCE.burstCd;
       this.audio.bubbles();
     }
     this.kickQueued = false;
@@ -703,7 +711,7 @@ export class Game {
   private resolveSolids(): void {
     this.fillLook(this.viewYaw, this.viewPitch, this.look);
     const reach = 8;
-    for (let pass = 0; pass < 2; pass++) {
+    for (let pass = 0; pass < 3; pass++) {
       const rocks = this.world.solids;
       for (let i = 0; i < rocks.length; i++) {
         const s = rocks[i];
@@ -721,34 +729,84 @@ export class Game {
     this.feet.set(clamped.x, clamped.y, clamped.z);
   }
 
-  /** Three spheres along the look, so a horizontal body still bumps low rocks. */
+  /**
+   * Spheres along the prone body, plus a point down the belly, so the torso
+   * cannot rest inside a rock while the fins stay outside.
+   */
   private pushBody(x: number, y: number, z: number, r: number, kind: string): void {
-    const along = [0.2, 0.75, 1.2];
+    const lx = this.look.x;
+    const ly = this.look.y;
+    const lz = this.look.z;
+    const flat = Math.hypot(lx, lz);
+    const rx = flat < 1e-4 ? -Math.cos(this.viewYaw) : lz / flat;
+    const rz = flat < 1e-4 ? Math.sin(this.viewYaw) : -lx / flat;
+    const bx = -rz * ly;
+    const by = rz * lx - rx * lz;
+    const bz = rx * ly;
+    const along = [0.15, 0.7, 1.2];
     for (let i = 0; i < along.length; i++) {
       const t = along[i];
-      const px = this.feet.x + this.look.x * t;
-      const py = this.feet.y + 0.32 + this.look.y * t;
-      const pz = this.feet.z + this.look.z * t;
-      this.pushOut(px, py, pz, x, y, z, r, kind);
+      const px = this.feet.x + lx * t;
+      const py = this.feet.y + 0.4 + ly * t;
+      const pz = this.feet.z + lz * t;
+      this.pushOut(px, py, pz, x, y, z, r, kind, 0.46);
+      this.pushOut(px + bx * 0.22, py + by * 0.22, pz + bz * 0.22, x, y, z, r, kind, 0.32);
     }
   }
 
-  private pushOut(px: number, py: number, pz: number, x: number, y: number, z: number, r: number, kind: string): void {
-    let dx = px - x;
-    let dy = py - y;
-    let dz = pz - z;
+  private pushOut(
+    px: number,
+    py: number,
+    pz: number,
+    x: number,
+    y: number,
+    z: number,
+    r: number,
+    kind: string,
+    body: number,
+  ): void {
+    const dx = px - x;
+    const dy = py - y;
+    const dz = pz - z;
     const dist = Math.hypot(dx, dy, dz);
-    const min = 0.34 + r;
-    if (dist >= min) return;
-    if (dist < 1e-4) {
-      dx = min;
-      dy = 0;
-      dz = 0;
+    const min = body + r;
+    const floor = terrainHeight(this.feet.x, this.feet.z);
+    // On the sand, a downward push is undone by the floor clamp and the torso
+    // sinks back into the rock. Slide out across the floor instead.
+    if (this.feet.y <= floor + 0.28 && Math.abs(dy) < min) {
+      const horiz = Math.hypot(dx, dz);
+      const limit = Math.sqrt(Math.max(0, min * min - dy * dy));
+      if (horiz < limit) {
+        const awayX = horiz < 1e-4 ? 1 : dx / horiz;
+        const awayZ = horiz < 1e-4 ? 0 : dz / horiz;
+        const push = limit - horiz;
+        this.feet.x += awayX * push;
+        this.feet.z += awayZ * push;
+        const vn = this.velX * awayX + this.velZ * awayZ;
+        if (vn < 0) {
+          this.velX -= vn * awayX;
+          this.velZ -= vn * awayZ;
+        }
+        if (this.debugOn && !this.pushedKind.has(kind)) {
+          this.pushedKind.add(kind);
+          console.info(`[push] ${kind} dist=${dist.toFixed(2)}`);
+        }
+        return;
+      }
     }
-    const len = Math.hypot(dx, dy, dz) || 1;
-    const nx = dx / len;
-    const ny = dy / len;
-    const nz = dz / len;
+    if (dist >= min) return;
+    let nx = dx;
+    let ny = dy;
+    let nz = dz;
+    if (dist < 1e-4) {
+      nx = min;
+      ny = 0;
+      nz = 0;
+    }
+    const len = Math.hypot(nx, ny, nz) || 1;
+    nx /= len;
+    ny /= len;
+    nz /= len;
     const gap = min - (dist < 1e-4 ? 0 : dist);
     this.feet.x += nx * gap;
     this.feet.y += ny * gap;
@@ -806,11 +864,22 @@ export class Game {
     const rx = -Math.cos(this.camYaw);
     const rz = Math.sin(this.camYaw);
     const aimY = this.feet.y + BALANCE.followAim;
-    const desiredX = this.feet.x - fx * back + rx * side;
-    const desiredZ = this.feet.z - fz * back + rz * side;
-    let desiredY = aimY + BALANCE.followLift;
-    const floor = terrainHeight(desiredX, desiredZ) + 1.15;
-    if (desiredY < floor) desiredY = floor;
+    const lift = BALANCE.followLift;
+    let desiredX = this.feet.x - fx * back + rx * side;
+    let desiredZ = this.feet.z - fz * back + rz * side;
+    let desiredY = aimY + lift;
+    const clearance = 0.85;
+    let floorY = terrainHeight(desiredX, desiredZ) + clearance;
+    if (desiredY < floorY) {
+      // Slide back along the same ray so the 45° elevation survives the sand.
+      const extra = Math.min(10, floorY - desiredY);
+      const scale = (lift + extra) / lift;
+      desiredX = this.feet.x - fx * back * scale + rx * side * scale;
+      desiredZ = this.feet.z - fz * back * scale + rz * side * scale;
+      desiredY = aimY + lift * scale;
+      floorY = terrainHeight(desiredX, desiredZ) + clearance;
+      if (desiredY < floorY) desiredY = floorY;
+    }
     if (immediate) {
       this.camPos.set(desiredX, desiredY, desiredZ);
     } else {

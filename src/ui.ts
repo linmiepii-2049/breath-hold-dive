@@ -21,7 +21,6 @@ export interface UIHooks {
   pad(phase: BreathPhase): void;
   hold(down: boolean): void;
   buy(id: GearId): void;
-  endDive(): void;
   resume(): void;
   sens(value: number): void;
   submit(): void;
@@ -140,7 +139,6 @@ export class GameUI {
     q('#go-breath')?.addEventListener('click', () => this.hooks.startBreath());
     q('#go-apnea')?.addEventListener('click', () => this.hooks.startApnea());
     q('#train-done')?.addEventListener('click', () => this.hooks.finishTrain());
-    q('#end-dive')?.addEventListener('click', () => this.hooks.endDive());
     q('#resume')?.addEventListener('click', () => this.hooks.resume());
     q('#sens')?.addEventListener('input', (ev) => {
       const value = Number((ev.target as HTMLInputElement).value);
@@ -373,7 +371,6 @@ export class GameUI {
         <div class="bar stamina"><span id="stam"></span></div>
         <div class="warn" id="warn"></div>
       </div>
-      <button type="button" class="primary end" id="end-dive">${t('btn.endDive')}</button>
       <div class="legend">
         <div>${t('hud.legend1')}</div>
         <div>${t('hud.legend2')}</div>
@@ -456,9 +453,11 @@ export class GameUI {
       ${row(t('judge.danger'), p.score.distanceDanger, 20)}
       <div class="total-line"><span>${t('judge.total')}</span><b>${p.score.total}</b></div>
       ${
-        p.score.total < BALANCE.minAccept
-          ? `<div class="prize rejected">${t('judge.rejected')}</div><p class="comment">${t('judge.rejectedNote')}</p><div class="prize">${t('judge.prize')} ¥0</div>`
-          : `<p class="comment">${t('cmt.' + p.score.comment)}</p><div class="prize">${t('judge.prize')} ¥${p.score.prize}</div>`
+        !p.score.species
+          ? `<p class="comment">${t('judge.emptyNote')}</p><div class="prize">${t('judge.prize')} ¥0</div>`
+          : p.score.total < BALANCE.minAccept
+            ? `<div class="prize rejected">${t('judge.rejected')}</div><p class="comment">${t('judge.rejectedNote')}</p><div class="prize">${t('judge.prize')} ¥0</div>`
+            : `<p class="comment">${t('cmt.' + p.score.comment)}</p><div class="prize">${t('judge.prize')} ¥${p.score.prize}</div>`
       }
       <div class="actions" style="margin-top:12px">
         <button class="primary" id="${last ? 'next-card' : 'next-card'}">${last ? t('btn.summary') : t('btn.next')}</button>
@@ -563,13 +562,8 @@ export class GameUI {
     if (stam) stam.style.width = `${Math.max(0, m.stamina)}%`;
     const warn = this.root.querySelector('#warn');
     if (warn) {
-      warn.textContent = m.atSurface
-        ? t('hud.surface')
-        : m.sharkThreat
-          ? t('hud.shark')
-          : m.warnReturn
-            ? t('hud.return')
-            : '';
+      if (m.atSurface) warn.innerHTML = t('hud.surface');
+      else warn.textContent = m.sharkThreat ? t('hud.shark') : m.warnReturn ? t('hud.return') : '';
     }
     const pin = this.root.querySelector('#pin') as HTMLElement | null;
     if (pin) pin.style.top = `${Math.max(0, Math.min(100, (m.depth / 40) * 100))}%`;
@@ -586,7 +580,6 @@ export class GameUI {
       else if (cooling) burst.textContent = `${t('hud.cooldown')} ${m.burstCd.toFixed(1)}`;
     }
     this.root.querySelector('#pause')?.classList.toggle('on', m.paused);
-    this.root.querySelector('#end-dive')?.classList.toggle('on', m.atSurface && !m.viewfinder && !m.paused);
     const toast = this.root.querySelector('#toasts');
     if (toast) toast.innerHTML = m.toasts.map((key) => `<div class="toast">${t(key)}</div>`).join('');
     const vig = this.root.querySelector('#vignette') as HTMLElement | null;

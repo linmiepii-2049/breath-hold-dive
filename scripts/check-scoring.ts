@@ -190,11 +190,13 @@ const garden = terrainHeight(7, 18);
 const trench = terrainHeight(20, 70);
 const lane = terrainHeight(6.2, 28);
 const leftShelf = terrainHeight(20, 16);
+const underSpawn = terrainHeight(6.2, 9);
 assert(entry < -3, `entry too shallow ${entry}`);
 assert(garden < -6 && garden > -20, `garden ${garden}`);
 assert(trench < -28, `trench ${trench}`);
 assert(lane < -18, `offshore lane ${lane}`);
 assert(leftShelf > -14, `left shelf stays shallow ${leftShelf}`);
+assert(underSpawn < -16, `spawn drop ${underSpawn}`);
 assert(Math.abs(depthMeters(-1.88) - 0.98) < 0.02, 'surface depth');
 
-console.log('scoring ok', { turtle: turtle.total, moment: turtleMoment.total, orca: orca.total, clown: clown.total, trench, garden });
+console.log('scoring ok', { turtle: turtle.total, moment: turtleMoment.total, orca: orca.total, clown: clown.total, trench, garden, underSpawn });

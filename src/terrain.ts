@@ -14,6 +14,15 @@ export function terrainHeight(x: number, z: number): number {
   // Lane straight off the spawn (x ≈ 6, heading +Z). The shelf to the left stays shallow.
   const lane = smoothstep(10, 22, z) * Math.exp(-((x - 6.2) * (x - 6.2)) / (2 * 9 * 9));
   depth += 9 * lane;
+  // The shelf under the spawn is only ~8 m. Open a drop in front of it so a
+  // straight descent has water under the diver, then fade it out before the garden.
+  const bowl = smoothstep(3.5, 10, z) * (1 - smoothstep(13.5, 17.2, z));
+  const across = Math.exp(-((x - 6.2) * (x - 6.2)) / (2 * 7.5 * 7.5));
+  depth += 7.5 * bowl * across;
+  const pocket = Math.exp(
+    -((x - 6.2) * (x - 6.2)) / (2 * 4.5 * 4.5) - ((z - 9) * (z - 9)) / (2 * 3.6 * 3.6),
+  );
+  depth += 5.5 * pocket;
   let y = -depth + dunes;
 
   if (z < 4) {
@@ -48,7 +57,7 @@ export function clampDiver(x: number, y: number, z: number): { x: number; y: num
   if (nx > BOUNDS.wallX - 1.2 && nz > BOUNDS.wallZ0 && nz < BOUNDS.wallZ1) {
     nx = BOUNDS.wallX - 1.2;
   }
-  const floor = terrainHeight(nx, nz) + 0.06;
+  const floor = terrainHeight(nx, nz) + 0.22;
   let ny = Math.max(y, floor);
   ny = Math.min(ny, BOUNDS.surfaceFeet);
   if (floor > BOUNDS.surfaceFeet) ny = floor;
