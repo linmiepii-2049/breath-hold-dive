@@ -245,19 +245,19 @@ export class GameUI {
       </div>
       <div class="dock panel">
         <div class="narrow-note">${t('desktop')}</div>
-        <p>${t('shore.blurb')}</p>
+        <p class="blurb">${t('shore.blurb')}</p>
         <div class="actions">
           <button class="primary" id="dive">${t('btn.dive')}</button>
           <button id="train">${t('btn.train')}</button>
           <button id="shop">${t('btn.shop')}</button>
           <button id="album">${t('btn.album')}</button>
         </div>
-        <div class="controls dim">
+        <div class="controls dim dock-scroll">
           <div>${t('shore.controls')}</div>
-          <div>${t('shore.c1')}</div>
-          <div>${t('shore.c2')}</div>
+          <div>${t(m.touch ? 'shore.c1touch' : 'shore.c1')}</div>
+          <div>${t(m.touch ? 'shore.c2touch' : 'shore.c2')}</div>
           <div>${t('shore.c3')}</div>
-          <label class="sens">${t('shore.sens')} <b id="sens-n">${m.lookSens.toFixed(2)}</b>
+          <label class="sens">${t(m.touch ? 'shore.sensTouch' : 'shore.sens')} <b id="sens-n">${m.lookSens.toFixed(2)}</b>
             <input id="sens" type="range" min="0.45" max="2.1" step="0.05" value="${m.lookSens}" />
           </label>
         </div>
@@ -275,13 +275,14 @@ export class GameUI {
   }
 
   private tools(m: UIModel): string {
-    return `<div class="h">
+    const mute = m.muted ? t('mute.off') : t('mute.on');
+    return `<div class="h tools">
       <div class="pill gold">¥${Math.round(m.money)}</div>
       <div class="pill lang">
-        <button data-lang="zh" class="${m.lang === 'zh' ? 'on' : ''}">中</button>
-        <button data-lang="en" class="${m.lang === 'en' ? 'on' : ''}">EN</button>
+        <button type="button" data-lang="zh" aria-label="${t('lang.zh')}" class="${m.lang === 'zh' ? 'on' : ''}">中</button>
+        <button type="button" data-lang="en" aria-label="${t('lang.en')}" class="${m.lang === 'en' ? 'on' : ''}">EN</button>
       </div>
-      <button class="pill" id="mute">${m.muted ? '♪×' : '♪'}</button>
+      <button type="button" class="pill" id="mute" aria-label="${mute}">${m.muted ? '♪×' : '♪'}<span class="btn-name">${mute}</span></button>
     </div>`;
   }
 
@@ -293,12 +294,12 @@ export class GameUI {
       <div class="cards">
         <div class="card-lite panel">
           <h3>${t('train.breath')}</h3>
-          <p>${t('train.breath.desc')}</p>
+          <p>${t(m.touch ? 'train.breath.descTouch' : 'train.breath.desc')}</p>
           <button class="primary" id="go-breath" ${locked ? 'disabled' : ''}>${t('btn.start')}</button>
         </div>
         <div class="card-lite panel">
           <h3>${t('train.apnea')}</h3>
-          <p>${t('train.apnea.desc')}</p>
+          <p>${t(m.touch ? 'train.apnea.descTouch' : 'train.apnea.desc')}</p>
           <button class="primary" id="go-apnea" ${locked ? 'disabled' : ''}>${t('btn.start')}</button>
         </div>
       </div>
@@ -324,16 +325,16 @@ export class GameUI {
         <div class="phase" id="phase"></div>
         <div class="dim" id="how"></div>
         <div class="keys">
-          <span id="k-inhale">${t('train.phase.inhale')} · J / ↑</span>
-          <span id="k-hold">${t('train.phase.hold')} · K / ${t('train.space')}</span>
-          <span id="k-exhale">${t('train.phase.exhale')} · L / ↓</span>
+          <span id="k-inhale">${t('train.phase.inhale')}${this.touch ? '' : ' · J / ↑'}</span>
+          <span id="k-hold">${t('train.phase.hold')}${this.touch ? '' : ` · K / ${t('train.space')}`}</span>
+          <span id="k-exhale">${t('train.phase.exhale')}${this.touch ? '' : ' · L / ↓'}</span>
         </div>
         <div class="lane" id="lane"><div class="zone" id="zone">${t('train.zone')}</div><div class="puck" id="puck"></div></div>
         <div id="flashword" style="min-height:1.4em"></div>
         <div class="actions">
-          <button id="pad-inhale">${t('train.phase.inhale')} · J</button>
-          <button id="pad-hold">${t('train.phase.hold')} · K</button>
-          <button id="pad-exhale">${t('train.phase.exhale')} · L</button>
+          <button id="pad-inhale">${t('train.phase.inhale')}${this.touch ? '' : ' · J'}</button>
+          <button id="pad-hold">${t('train.phase.hold')}${this.touch ? '' : ' · K'}</button>
+          <button id="pad-exhale">${t('train.phase.exhale')}${this.touch ? '' : ' · L'}</button>
         </div>
       </div>
       <div id="result" style="display:none">
@@ -352,7 +353,7 @@ export class GameUI {
         <div class="dim">${t('train.hr')} · ${t('train.line')} 118</div>
         <div class="hr-gauge"><div class="hr-fill" id="hr-fill"></div><div class="hr-line" id="hr-line"></div></div>
         <div id="under"></div>
-        <button class="primary" id="hold" style="margin-top:12px">${t('train.holdBtn')} · Space</button>
+        <button class="primary" id="hold" style="margin-top:12px">${t('train.holdBtn')}${this.touch ? '' : ' · Space'}</button>
       </div>
       <div id="result" style="display:none">
         <h2>${t('train.apnea')}</h2>
@@ -431,8 +432,8 @@ export class GameUI {
         <div class="warn" id="warn"></div>
       </div>
       <div class="legend">
-        <div>${t('hud.legend1')}</div>
-        <div>${t('hud.legend2')}</div>
+        <div>${t(m.touch ? 'hud.legend1touch' : 'hud.legend1')}</div>
+        <div>${t(m.touch ? 'hud.legend2touch' : 'hud.legend2')}</div>
       </div>
       <div class="vf" id="vf">
         <div class="border"></div>
@@ -452,7 +453,7 @@ export class GameUI {
         <div class="panel">
           <h2>${t('hud.pause')}</h2>
           <p class="dim" id="pause-hint"></p>
-          <button type="button" class="primary" id="resume">${t('btn.resume')}</button>
+          <button type="button" class="primary" id="resume">${t(m.touch ? 'btn.resumeTouch' : 'btn.resume')}</button>
           ${m.touch ? `<button type="button" id="touch-end-paused">${t('touch.end')}</button>` : ''}
         </div>
       </div>
@@ -487,10 +488,12 @@ export class GameUI {
             .join('')}</div>`
         : `<p>${t('judge.none')}</p>`;
       return `<div class="modal"><div class="panel sheet">
-        <p class="dim">${t('judge.kicker')}</p>
-        <h2>${t('judge.review')}</h2>
-        ${frames}
-        <div class="actions" style="margin-top:12px">
+        <div class="card-body">
+          <p class="dim">${t('judge.kicker')}</p>
+          <h2>${t('judge.review')}</h2>
+          ${frames}
+        </div>
+        <div class="actions">
           <button class="primary" id="submit">${t('btn.submit')}</button>
         </div>
       </div></div>`;
@@ -498,19 +501,23 @@ export class GameUI {
     if (m.judgePhase === 'summary' || m.photos.length === 0) {
       const best = m.photos.reduce((n, p) => Math.max(n, p.score.total), 0);
       const rejected = m.photos.filter((p) => p.score.species && p.score.total < BALANCE.minAccept).length;
-      return `<div class="modal"><div class="panel" style="width:min(460px,100%)">
-        <p class="dim">${t('judge.kicker')}</p>
-        <h2>${t('judge.settle')}</h2>
-        <div class="sum">
-          <div>${t('judge.best')}</div><div>${best}</div>
-          <div>${t('judge.rejected')}</div><div>${rejected}</div>
-          <div>${t('judge.gross')}</div><div>¥${m.gross}</div>
-          <div>${t('judge.fines')}</div><div>¥${m.fines}</div>
-          <div>${t('judge.net')}</div><div class="net gold">¥${Math.max(0, m.net)}</div>
-          <div>${t('judge.balance')}</div><div>¥${Math.round(m.money)}</div>
+      return `<div class="modal"><div class="panel settle" style="width:min(460px,100%)">
+        <div class="card-body">
+          <p class="dim">${t('judge.kicker')}</p>
+          <h2>${t('judge.settle')}</h2>
+          <div class="sum">
+            <div>${t('judge.best')}</div><div>${best}</div>
+            <div>${t('judge.rejected')}</div><div>${rejected}</div>
+            <div>${t('judge.gross')}</div><div>¥${m.gross}</div>
+            <div>${t('judge.fines')}</div><div>¥${m.fines}</div>
+            <div>${t('judge.net')}</div><div class="net gold">¥${Math.max(0, m.net)}</div>
+            <div>${t('judge.balance')}</div><div>¥${Math.round(m.money)}</div>
+          </div>
+          <p class="dim">${t('judge.note')}</p>
         </div>
-        <p class="dim">${t('judge.note')}</p>
-        <button class="primary" id="to-shore">${t('btn.shore')}</button>
+        <div class="actions">
+          <button class="primary" id="to-shore">${t('btn.shore')}</button>
+        </div>
       </div></div>`;
     }
     const p = m.photos[m.judgeIndex] ?? m.photos[0];
@@ -520,24 +527,26 @@ export class GameUI {
     const row = (label: string, value: number, max: number) =>
       `<div class="score-row"><span>${label}</span><div class="track"><span style="width:${(Math.min(max, value) / max) * 100}%"></span></div><b>${value}</b></div>`;
     return `<div class="modal"><div class="card">
-      <p class="kicker">${t('judge.kicker')}</p>
-      <h2>${f('judge.frame', { n: m.judgeIndex + 1 })}</h2>
-      <p class="who">${who}${moment}</p>
-      <img alt="" src="${p.dataUrl}" />
-      ${row(t('judge.comp'), p.score.composition, 30)}
-      ${row(t('judge.rarity'), p.score.rarity, 25)}
-      ${row(p.score.momentNote === 'action' ? t('judge.momentAction') : p.score.momentNote === 'special' ? t('judge.momentSpecial') : t('judge.moment'), p.score.moment, 25)}
-      ${row(t('judge.danger'), p.score.distanceDanger, 20)}
-      <div class="total-line"><span>${t('judge.total')}</span><b>${p.score.total}</b></div>
-      ${
-        !p.score.species
-          ? `<p class="comment">${t('judge.emptyNote')}</p><div class="prize">${t('judge.prize')} ¥0</div>`
-          : p.score.total < BALANCE.minAccept
-            ? `<div class="prize rejected">${t('judge.rejected')}</div><p class="comment">${t('judge.rejectedNote')}</p><div class="prize">${t('judge.prize')} ¥0</div>`
-            : `<p class="comment">${t('cmt.' + p.score.comment)}</p><div class="prize">${t('judge.prize')} ¥${p.score.prize}</div>`
-      }
-      <div class="actions" style="margin-top:12px">
-        <button class="primary" id="${last ? 'next-card' : 'next-card'}">${last ? t('btn.summary') : t('btn.next')}</button>
+      <div class="card-body">
+        <p class="kicker">${t('judge.kicker')}</p>
+        <h2>${f('judge.frame', { n: m.judgeIndex + 1 })}</h2>
+        <p class="who">${who}${moment}</p>
+        <img alt="" src="${p.dataUrl}" />
+        ${row(t('judge.comp'), p.score.composition, 30)}
+        ${row(t('judge.rarity'), p.score.rarity, 25)}
+        ${row(p.score.momentNote === 'action' ? t('judge.momentAction') : p.score.momentNote === 'special' ? t('judge.momentSpecial') : t('judge.moment'), p.score.moment, 25)}
+        ${row(t('judge.danger'), p.score.distanceDanger, 20)}
+        <div class="total-line"><span>${t('judge.total')}</span><b>${p.score.total}</b></div>
+        ${
+          !p.score.species
+            ? `<p class="comment">${t('judge.emptyNote')}</p><div class="prize">${t('judge.prize')} ¥0</div>`
+            : p.score.total < BALANCE.minAccept
+              ? `<div class="prize rejected">${t('judge.rejected')}</div><p class="comment">${t('judge.rejectedNote')}</p><div class="prize">${t('judge.prize')} ¥0</div>`
+              : `<p class="comment">${t('cmt.' + p.score.comment)}</p><div class="prize">${t('judge.prize')} ¥${p.score.prize}</div>`
+        }
+      </div>
+      <div class="actions">
+        <button class="primary" id="next-card">${last ? t('btn.summary') : t('btn.next')}</button>
       </div>
     </div></div>`;
   }
@@ -570,7 +579,7 @@ export class GameUI {
       if (el) el.textContent = text;
     };
     set('#phase', s.intro > 0 ? t('train.ready') : t(`train.phase.${phase}`));
-    set('#how', t('train.how'));
+    set('#how', t(this.touch ? 'train.howTouch' : 'train.how'));
     set('#time', s.intro > 0 ? t('train.ready') : f('train.time', { n: Math.max(0, Math.ceil(s.duration - s.t)) }));
     const zone = this.root.querySelector('#zone') as HTMLElement | null;
     if (zone) {
@@ -640,7 +649,7 @@ export class GameUI {
     const warn = this.root.querySelector('#warn');
     if (warn) {
       warn.classList.toggle('charge', m.sharkCharging && !m.atSurface);
-      if (m.atSurface) warn.innerHTML = t('hud.surface');
+      if (m.atSurface) warn.innerHTML = t(m.touch ? 'hud.surfaceTouch' : 'hud.surface');
       else if (m.sharkCharging) warn.textContent = t('hud.sharkCharge');
       else warn.textContent = m.sharkThreat ? t('hud.shark') : m.warnReturn ? t('hud.return') : '';
     }
@@ -663,7 +672,11 @@ export class GameUI {
     this.root.classList.toggle('surfaced', m.atSurface);
     this.root.classList.toggle('aiming', m.viewfinder);
     const pauseHint = this.root.querySelector('#pause-hint');
-    if (pauseHint) pauseHint.innerHTML = m.atSurface ? t('hud.pauseHint') : t('hud.pauseSteer');
+    if (pauseHint) {
+      pauseHint.innerHTML = m.atSurface
+        ? t(m.touch ? 'hud.pauseHintTouch' : 'hud.pauseHint')
+        : t(m.touch ? 'hud.pauseSteerTouch' : 'hud.pauseSteer');
+    }
     this.root.classList.toggle('charging', m.sharkCharging && !m.atSurface);
     const toast = this.root.querySelector('#toasts');
     if (toast) toast.innerHTML = m.toasts.map((item) => `<div class="toast">${item.text ?? t(item.key)}</div>`).join('');

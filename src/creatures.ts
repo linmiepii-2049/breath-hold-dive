@@ -110,12 +110,14 @@ export class OceanLife {
   private orca!: Swimmer;
   private orcaHit = false;
   private orcaTold = false;
-  /** Charge aim. `min` is the closest gap so far; a sprint that opens it ends the run. */
+  /** Charge aim. `min` is the closest gap so far, kept for the log. */
   private chargeDir = new Map<Swimmer, { x: number; y: number; z: number; ox: number; oy: number; oz: number; start: number; min: number }>();
   private diverPx = 0;
   private diverPy = 0;
   private diverPz = 0;
   private diverSpeed = 0;
+  /** Seconds the speed has stayed in the sprint band. A one-frame wall pop does not count. */
+  private sprintHold = 0;
   private diverReady = false;
   private octoTold = false;
   /** Circle frozen on the diver's position when the warning started. A sprint leaves the ring. */
@@ -379,6 +381,10 @@ export class OceanLife {
     } else {
       this.diverSpeed = 0;
     }
+    // Cruise is about 2.45 m/s. A sprint sits above 3 m/s. One frame of a solid
+    // correction can land in that band and must not cancel a charge.
+    if (this.diverSpeed > 3.05 && this.diverSpeed < 8) this.sprintHold += dt;
+    else this.sprintHold = 0;
     this.diverPx = diver.x;
     this.diverPy = diver.y;
     this.diverPz = diver.z;
@@ -594,20 +600,27 @@ export class OceanLife {
       this.scene.add(mesh);
     }
 
-    // Both patrols stay off the spawn lane (x ≈ 0–14, z ≈ 8–48). The shallow
-    // shark works the reef wall. The other stays in the trench.
+    // Off the spawn lane (x ≈ 0–14, z ≈ 8–48) for the first 20 s. The reef shark
+    // swims about 3–16 m: a midwater pass at 3 m, then the wall around 9–16 m.
+    // The trench shark rides the deep pocket (about x 4–24, z 50–76), from
+    // roughly 27 m down to the floor near 41 m. A diver at 30 m or 36 m in that
+    // pocket is on the route. Neither shark covers the whole map.
     const sharkWps: Array<Array<[number, number, number]>> = [
       [
-        [20, -9, 24],
-        [26, -11, 36],
-        [22, -13, 50],
-        [18, -10, 34],
+        [-14, -3.6, 26],
+        [-6, -7.5, 34],
+        [22, -14, 34],
+        [26, -15, 42],
+        [16, -10, 28],
       ],
       [
-        [22, -24, 62],
-        [26, -30, 72],
-        [-10, -26, 74],
-        [-16, -20, 60],
+        [12, -28, 50],
+        [18, -32, 56],
+        [18, -36, 62],
+        [24, -38, 66],
+        [16, -42, 74],
+        [8, -35, 70],
+        [4, -30, 64],
       ],
     ];
     sharkWps.forEach((wps, i) => {
@@ -906,9 +919,9 @@ export class OceanLife {
     s.yaw = Math.atan2(a.x - s.x, a.z - s.z);
   }
 
-  /** A sprint is well above a drift or a cruise kick, and below a one-frame teleport. */
+  /** A sprint is well above a drift or a cruise kick, and has to last a moment. */
   private diverSprinting(): boolean {
-    return this.diverSpeed > 3.05 && this.diverSpeed < 8;
+    return this.sprintHold >= 0.16;
   }
 
   /** Lock a run at the diver. It keeps homing until it touches a diver who only drifts. */
@@ -972,7 +985,8 @@ export class OceanLife {
     }
     if (s.state === 'charge') {
       // 2.5 m/s homes on a diver who sinks, rises, or drifts, until contact.
-      // A sprint is faster than that and the shark breaks off.
+      // A sustained sprint is faster than that and the shark breaks off.
+      // A ridge that lifts the shark, or one frame of a wall push, does not.
       const aim = this.chargeDir.get(s);
       const speed = 2.5;
       const dx = diver.x - s.x;
@@ -994,11 +1008,10 @@ export class OceanLife {
       s.timer -= dt;
       const now = Math.hypot(s.x - diver.x, s.y - diver.y, s.z - diver.z);
       if (aim) aim.min = Math.min(aim.min, now);
-      const opened = aim ? now > aim.min + 1.55 : false;
       if (now < 2.2) {
         this.setShark(s, 'retreat', now, 4.5);
         out.hit = out.hit ?? 'shark';
-      } else if (this.diverSprinting() || opened || s.timer <= 0 || now > 18) {
+      } else if (this.diverSprinting() || s.timer <= 0 || now > 18) {
         this.setShark(s, 'patrol', now, 12);
       }
       return;
@@ -1073,7 +1086,8 @@ export class OceanLife {
     const wp = s.wps[s.wp];
     if (!wp) return;
     const floor = terrainHeight(wp[0], wp[2]);
-    const ty = wp[1] === 0 ? floor + 1.6 : wp[1];
+    // Ride above the sand. A waypoint buried in the floor would never count as reached.
+    const ty = Math.max(wp[1] === 0 ? floor + 1.6 : wp[1], floor + 1.8);
     const dx = wp[0] - s.x;
     const dy = ty - s.y;
     const dz = wp[2] - s.z;
