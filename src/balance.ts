@@ -88,10 +88,16 @@ export const BALANCE = {
   blackoutFine: 70,
   /** Fraction of non-best photos added to the payout. */
   otherPhotoPay: 0.25,
-  /** Third-person camera sits beside the diver so the prone body crosses the frame. */
-  followDist: 6.4,
-  followSide: 5.4,
-  followLift: 1.7,
+  /**
+   * Elevated rear three-quarter. ~45° up (lift ≈ back), a small side offset,
+   * and the look target above the diver so the body sits in the lower third.
+   */
+  followBack: 4.6,
+  followSide: 3.1,
+  followLift: 4.4,
+  followAim: 1.65,
+  /** HUD surface band. The feet rest near 0.98 m; the end button hides past this. */
+  surfaceUi: 1.05,
   shotCooldown: 0.45,
   grace: 3.5,
 };

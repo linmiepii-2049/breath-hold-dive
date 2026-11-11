@@ -190,7 +190,15 @@ button:hover:not(:disabled) { filter: brightness(1.08); }
 .pause .panel { width: min(460px, calc(100% - 40px)); text-align: center; padding: 28px 22px; }
 .pause h2 { font-size: 40px; margin: 0 0 10px; }
 .pause p { font-size: 20px; color: #f4fffd; line-height: 1.45; }
-.end { display: none; margin: 10px auto 0; }
+.end {
+  display: none;
+  position: absolute;
+  left: 50%;
+  bottom: 196px;
+  transform: translateX(-50%);
+  z-index: 4;
+  white-space: nowrap;
+}
 .end.on { display: block; }
 
 .sheet { width: min(920px, 100%); }

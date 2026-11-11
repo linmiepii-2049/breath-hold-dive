@@ -33,6 +33,13 @@ export const LANDMARKS = {
   bait: { x: 1.5, z: 32 },
 };
 
+export interface Solid {
+  x: number;
+  y: number;
+  z: number;
+  r: number;
+}
+
 export interface World {
   scene: Scene;
   fog: FogExp2;
@@ -44,6 +51,7 @@ export interface World {
   snell: Mesh;
   hemi: import('three').HemisphereLight;
   sun: import('three').DirectionalLight;
+  solids: Solid[];
   update(time: number, camY: number, diverDepth: number): void;
 }
 
@@ -100,8 +108,9 @@ export function createWorld(): World {
   snell.position.y = -0.15;
   scene.add(snell);
 
-  const reef = buildReef();
-  const wall = buildWall();
+  const solids: Solid[] = [];
+  const reef = buildReef(solids);
+  const wall = buildWall(solids);
   reef.userData.occluder = true;
   wall.userData.occluder = true;
   scene.add(reef);
@@ -135,6 +144,7 @@ export function createWorld(): World {
     snell,
     hemi,
     sun,
+    solids,
     update(time, camY, diverDepth) {
       const diveT = Math.min(1, diverDepth / 34);
       const under = Math.min(1, Math.max(0, (0.4 - camY) / 4));
@@ -226,7 +236,7 @@ function buildFloor(): Mesh {
   return new Mesh(geo, mat);
 }
 
-function buildReef(): Mesh {
+function buildReef(solids: Solid[]): Mesh {
   const rand = rng(2049);
   const parts: { geo: BufferGeometry; matrix: Matrix4; color: Color }[] = [];
   const colors = [0xe38b9b, 0xe07a3d, 0x8d6b9c, 0xd2c06a, 0xde6d58].map((c) => new Color(c));
@@ -256,21 +266,19 @@ function buildReef(): Mesh {
     const floor = terrainHeight(spot.x, spot.z);
     for (let k = 0; k < 4; k++) {
       const ang = k * 1.6;
+      const px = spot.x + Math.cos(ang) * 1.1;
+      const py = floor + 0.45;
+      const pz = spot.z + Math.sin(ang) * 1.1;
+      const rx = rand();
+      const ry = rand() * 3;
+      const rz = rand();
+      const sx = 0.7 + rand() * 0.5;
       parts.push({
         geo: UNIT.ico,
-        matrix: M(
-          spot.x + Math.cos(ang) * 1.1,
-          floor + 0.45,
-          spot.z + Math.sin(ang) * 1.1,
-          rand(),
-          rand() * 3,
-          rand(),
-          0.7 + rand() * 0.5,
-          0.55,
-          0.7,
-        ),
+        matrix: M(px, py, pz, rx, ry, rz, sx, 0.55, 0.7),
         color: rockColor,
       });
+      solids.push({ x: px, y: py, z: pz, r: Math.max(sx, 0.7) * 0.62 });
     }
   }
   for (let i = 0; i < 26; i++) {
@@ -279,18 +287,20 @@ function buildReef(): Mesh {
     const floor = terrainHeight(x, z);
     if (floor > -3) continue;
     const s = 0.4 + rand() * 1.1;
+    const py = floor + s * 0.35;
     parts.push({
       geo: UNIT.ico,
-      matrix: M(x, floor + s * 0.35, z, rand(), rand() * 4, rand() * 0.4, s, s * 0.7, s),
+      matrix: M(x, py, z, rand(), rand() * 4, rand() * 0.4, s, s * 0.7, s),
       color: new Color(0x4e656c).offsetHSL(0, 0, (rand() - 0.5) * 0.06),
     });
+    if (s >= 0.72) solids.push({ x, y: py, z, r: s * 0.62 });
   }
   const geo = mergeParts(parts);
   const mat = new MeshLambertMaterial({ vertexColors: true, flatShading: true });
   return new Mesh(geo, mat);
 }
 
-function buildWall(): Mesh {
+function buildWall(solids: Solid[]): Mesh {
   const rand = rng(77);
   const parts: { geo: BufferGeometry; matrix: Matrix4; color: Color }[] = [];
   for (let i = 0; i < 42; i++) {
@@ -299,11 +309,14 @@ function buildWall(): Mesh {
     const floor = terrainHeight(Math.min(x, 27), z);
     const h = 3 + rand() * 8;
     const s = 1.4 + rand() * 2.2;
+    const py = floor + h * 0.35;
     parts.push({
       geo: UNIT.ico,
-      matrix: M(x, floor + h * 0.35, z, rand(), rand() * 3, rand(), s, h, s * 0.8),
+      matrix: M(x, py, z, rand(), rand() * 3, rand(), s, h, s * 0.8),
       color: new Color(0x3e5560).offsetHSL(0, 0, (rand() - 0.5) * 0.05),
     });
+    const r = Math.min(2.6, Math.max(s * 0.85, h * 0.22));
+    solids.push({ x, y: floor + r * 0.55, z, r });
   }
   const geo = mergeParts(parts);
   return new Mesh(geo, new MeshLambertMaterial({ vertexColors: true, flatShading: true }));

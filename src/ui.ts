@@ -372,8 +372,8 @@ export class GameUI {
         <div class="lbl" style="margin-top:8px">${t('hud.stamina')}</div>
         <div class="bar stamina"><span id="stam"></span></div>
         <div class="warn" id="warn"></div>
-        <button type="button" class="primary end" id="end-dive">${t('btn.endDive')}</button>
       </div>
+      <button type="button" class="primary end" id="end-dive">${t('btn.endDive')}</button>
       <div class="legend">
         <div>${t('hud.legend1')}</div>
         <div>${t('hud.legend2')}</div>

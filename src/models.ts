@@ -168,7 +168,11 @@ export function makeTurtle(): Group {
     if (s < 0) g.userData.flipL = flip;
     else g.userData.flipR = flip;
   }
-  g.userData.tail = g.userData.flipL;
+  const tail = new Group();
+  tail.position.set(0, 0.02, -0.48);
+  tail.add(mesh(sphere, 0xcbb892, 0, 0, -0.14, 0.05, 0.035, 0.18));
+  g.add(tail);
+  g.userData.tail = tail;
   return g;
 }
 
@@ -183,7 +187,10 @@ export function makeManta(): Group {
   wingL.add(mesh(sphere, 0x323c4e, -0.85, 0, 0, 0.95, 0.06, 0.7));
   wingR.add(mesh(sphere, 0x323c4e, 0.85, 0, 0, 0.95, 0.06, 0.7));
   g.add(wingL, wingR);
-  g.add(mesh(sphere, 0x2c3544, 0, 0.02, -1.15, 0.08, 0.05, 0.55));
+  const tail = new Group();
+  tail.position.set(0, 0.02, -0.7);
+  tail.add(mesh(sphere, 0x2c3544, 0, 0, -0.45, 0.08, 0.05, 0.55));
+  g.add(tail);
   g.add(mesh(sphere, 0x222833, -0.18, 0.02, 0.85, 0.1, 0.08, 0.28));
   g.add(mesh(sphere, 0x222833, 0.18, 0.02, 0.85, 0.1, 0.08, 0.28));
   for (const s of [-1, 1]) {
@@ -191,7 +198,7 @@ export function makeManta(): Group {
   }
   g.userData.wingL = wingL;
   g.userData.wingR = wingR;
-  g.userData.tail = wingL;
+  g.userData.tail = tail;
   return g;
 }
 
@@ -223,7 +230,6 @@ export function makeOctopus(): Group {
   }
   g.userData.legs = legs;
   g.userData.bodyMat = bodyMat;
-  g.userData.tail = legs[0];
   g.scale.setScalar(1.4);
   return g;
 }
@@ -247,11 +253,16 @@ export function makeShark(): Group {
   dorsal.position.set(0, 0.72, 0.05);
   g.add(dorsal);
   for (const s of [-1, 1] as const) {
+    const pecPivot = new Group();
+    pecPivot.position.set(s * 0.42, -0.16, 0.35);
     const pec = new Mesh(sphere, bodyMat);
     pec.scale.set(0.55, 0.05, 0.22);
-    pec.position.set(s * 0.55, -0.16, 0.35);
+    pec.position.set(s * 0.28, 0, 0);
     pec.rotation.z = s * 0.35;
-    g.add(pec);
+    pecPivot.add(pec);
+    g.add(pecPivot);
+    if (s < 0) g.userData.pecL = pecPivot;
+    else g.userData.pecR = pecPivot;
     const eye = new Mesh(sphere, new MeshBasicMaterial({ color: 0x14181c }));
     eye.scale.set(0.06, 0.06, 0.06);
     eye.position.set(s * 0.28, 0.08, 1.35);
@@ -323,7 +334,7 @@ export function makeDiver(): Group {
   const g = new Group();
   const suit = lambert(SUITS[0]);
   const skin = lambert(0xe0b498);
-  const finMat = lambert(0x1ec2b4);
+  const finMat = lambert(0x7af6e4);
   const accent = lambert(0xe36a3c);
 
   const torso = new Mesh(sphere, suit);
@@ -369,8 +380,8 @@ export function makeDiver(): Group {
   const fins: Mesh[] = [];
   for (const leg of [legL, legR]) {
     const fin = new Mesh(sphere, finMat);
-    fin.scale.set(0.28, 0.05, 0.72);
-    fin.position.set(0, -0.78, 0.04);
+    fin.scale.set(0.14, 0.028, 0.46);
+    fin.position.set(0, -0.64, -0.06);
     leg.add(fin);
     fins.push(fin);
   }
@@ -387,9 +398,9 @@ export function makeDiver(): Group {
 export function tintDiver(diver: Group, suitLevel: number, finLevel: number): void {
   const suit = diver.userData.suit as MeshLambertMaterial;
   suit.color.set(SUITS[Math.max(0, Math.min(3, suitLevel))]);
-  const stretch = 1 + finLevel * 0.18;
+  const stretch = 1 + finLevel * 0.12;
   for (const fin of diver.userData.fins as Mesh[]) {
-    fin.scale.set(0.28 + finLevel * 0.03, 0.05, 0.72 * stretch);
+    fin.scale.set(0.14 * (1 + finLevel * 0.04), 0.028, 0.46 * stretch);
   }
 }
 
@@ -410,13 +421,14 @@ export function animateDiver(diver: Group, time: number, kicking: boolean, burst
     armR.rotation.x = s * 0.04;
     return;
   }
-  const window = burst ? 0.34 : 0.42;
+  const window = burst ? 0.7 : 0.85;
   const u = kicking ? Math.min(1, (phase % 1) / window) : 0;
   const sweep = Math.sin(u * Math.PI);
-  const amp = burst ? 1.5 : kicking ? 1.28 : 0.1;
-  const base = kicking ? 0.02 : 0.32;
-  legL.rotation.x = base + sweep * amp;
-  legR.rotation.x = base + sweep * amp;
+  // Negative pitch lifts the blades toward the back, so the kick reads from the rear camera.
+  const amp = burst ? 1.2 : kicking ? 1.05 : 0.08;
+  const base = kicking ? -0.2 : 0.25;
+  legL.rotation.x = base - sweep * amp;
+  legR.rotation.x = base - sweep * amp;
   const arm = kicking ? -0.28 - sweep * 0.4 : -0.9;
   armL.rotation.x = arm;
   armR.rotation.x = arm;
@@ -424,20 +436,31 @@ export function animateDiver(diver: Group, time: number, kicking: boolean, burst
 
 export function animateTail(group: Group, time: number, speed: number, phase = 0): void {
   const tail = group.userData.tail as Group | undefined;
-  if (tail) tail.rotation.y = Math.sin(time * speed + phase) * 0.45;
+  if (tail) {
+    const beat = Math.sin(time * speed + phase);
+    tail.rotation.y = beat * 0.85;
+    tail.rotation.x = beat * 0.12;
+  }
+  const pecL = group.userData.pecL as Group | undefined;
+  const pecR = group.userData.pecR as Group | undefined;
+  if (pecL && pecR) {
+    const w = Math.sin(time * speed * 0.85 + phase) * 0.38;
+    pecL.rotation.x = w;
+    pecR.rotation.x = w;
+  }
   const wingL = group.userData.wingL as Group | undefined;
   const wingR = group.userData.wingR as Group | undefined;
   if (wingL && wingR) {
-    const w = Math.sin(time * 1.6 + phase) * 0.22;
+    const w = Math.sin(time * 2.4 + phase) * 0.5;
     wingL.rotation.z = w;
     wingR.rotation.z = -w;
   }
   const flipL = group.userData.flipL as Group | undefined;
   const flipR = group.userData.flipR as Group | undefined;
   if (flipL && flipR) {
-    const w = Math.sin(time * 2.2 + phase) * 0.5;
-    flipL.rotation.z = 0.4 + w;
-    flipR.rotation.z = -0.4 - w;
+    const w = Math.sin(time * 3.1 + phase) * 0.85;
+    flipL.rotation.z = 0.35 + w;
+    flipR.rotation.z = -0.35 - w;
   }
   const legs = group.userData.legs as Group[] | undefined;
   const bodyMat = group.userData.bodyMat as MeshLambertMaterial | undefined;

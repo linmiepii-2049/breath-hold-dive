@@ -96,7 +96,6 @@ export class OceanLife {
   private sharkA!: Swimmer;
   private turtleA!: Swimmer;
   private orca!: Swimmer;
-  private chargeHit = false;
   private orcaHit = false;
   private orcaTold = false;
   private baitTold = false;
@@ -105,11 +104,15 @@ export class OceanLife {
   private passX = -40;
   private debugLock = 0;
   private debugOcto = false;
+  private sharkLog = false;
+  private schoolTail: InstancedMesh;
 
   constructor(scene: Scene) {
     this.scene = scene;
     this.school = this.buildSchool();
+    this.schoolTail = this.buildSchoolTail();
     scene.add(this.school);
+    scene.add(this.schoolTail);
     this.octopus = makeOctopus();
     scene.add(this.octopus);
     this.reset();
@@ -120,7 +123,6 @@ export class OceanLife {
     this.bait = 'flock';
     this.nextBait = 40;
     this.baitLeft = 0;
-    this.chargeHit = false;
     this.orcaHit = false;
     this.orcaTold = false;
     this.baitTold = false;
@@ -153,12 +155,33 @@ export class OceanLife {
     return this.debugLock > 0;
   }
 
+  setDebug(on: boolean): void {
+    this.sharkLog = on;
+  }
+
+  /** The first photo ends the debug hold, so a teleport does not trap the diver. */
+  releaseFrame(): void {
+    this.debugLock = 0;
+  }
+
+  /** Large animals the diver should bump instead of swimming through. */
+  bodies(): { x: number; y: number; z: number; r: number; kind: string }[] {
+    const out: { x: number; y: number; z: number; r: number; kind: string }[] = [];
+    for (const s of this.swimmers) {
+      if (s.species === 'orca' && !this.orcaVisible) continue;
+      const r = s.species === 'turtle' ? 0.9 : s.species === 'manta' ? 1.35 : s.species === 'shark' ? 1.55 : s.species === 'orca' ? 2.2 : 0;
+      if (r <= 0) continue;
+      out.push({ x: s.x, y: s.y, z: s.z, r, kind: s.species });
+    }
+    return out;
+  }
+
   /**
    * Freeze the cast and place one animal, or one special moment, in front of a photo spot.
    * Only called from the ?debug=1 panel.
    */
   debugTrigger(id: string): { x: number; y: number; z: number; yaw: number; lookX: number; lookY: number; lookZ: number } {
-    this.debugLock = 22;
+    this.debugLock = 8;
     this.parkAll();
     const look = (x: number, y: number, z: number, back: number, yaw: number) => {
       const px = x - Math.sin(yaw) * back;
@@ -562,7 +585,7 @@ export class OceanLife {
         z: wps[0][2],
         yaw: 0,
         state: 'patrol',
-        timer: 8,
+        timer: 0,
         speed: 2.1,
         radius: 1.45,
         optimal: 9,
@@ -610,7 +633,6 @@ export class OceanLife {
         this.baitX = clamp(diver.x * 0.35 + (Math.random() * 6 - 3), -14, 14);
         this.baitZ = clamp(Math.max(diver.z, 8) + 8, 18, 44);
         this.baitY = -8.2;
-        this.chargeHit = false;
       }
     } else {
       this.baitLeft -= dt;
@@ -758,8 +780,11 @@ export class OceanLife {
       s.mesh.visible = s.species === 'orca' ? this.orcaVisible : true;
       s.mesh.position.set(s.x, s.y, s.z);
       s.mesh.rotation.y = s.yaw;
+      const lively = s.species === 'shark' || s.species === 'orca' ? 0.07 : s.species === 'manta' ? 0.05 : 0.16;
+      s.mesh.rotation.z = Math.sin(this.t * 5 + s.phase) * lively;
+      s.mesh.rotation.x = Math.sin(this.t * 3.1 + s.phase) * lively * 0.55;
       const tail =
-        s.species === 'manta' ? 1.6 : s.state === 'charge' ? 14 : s.state === 'warn' ? 10 : 6;
+        s.species === 'manta' ? 2.4 : s.state === 'charge' ? 14 : s.state === 'warn' ? 10 : 7;
       animateTail(s.mesh, this.t, tail, s.phase);
     }
   }
@@ -833,61 +858,60 @@ export class OceanLife {
     this.seek(s, tx, diver.y + 1.15, tz, flat > 9 ? 4.2 : 3.3, dt);
   }
 
+  private setShark(s: Swimmer, next: string, dist: number, timer: number): void {
+    if (this.sharkLog && s.state !== next) {
+      console.info(`[shark] ${s.state} -> ${next} dist=${dist.toFixed(1)} t=${this.t.toFixed(1)}`);
+    }
+    s.state = next;
+    s.timer = timer;
+  }
+
   private stepShark(s: Swimmer, dt: number, diver: Vector3, aggro: boolean, out: SimEvent): void {
     const scripted = s === this.sharkA && this.bait !== 'flock' && !this.calmSpawn();
-    const dist = Math.hypot(s.x - diver.x, s.y - (diver.y + 1), s.z - diver.z);
+    // `diver` is already the chest. An extra +1 m hid sharks that were plainly on screen.
+    const dist = Math.hypot(s.x - diver.x, s.y - diver.y, s.z - diver.z);
     if (s.state === 'warn' || s.state === 'charge') out.sharkThreat = true;
-    if (scripted) {
-      if (s.state === 'warn' || s.state === 'charge') s.state = 'patrol';
-      const tx = this.baitX + (this.bait === 'scatter' ? 8 : 0);
-      const speed = this.bait === 'charge' ? 7.2 : 3.4;
-      this.seek(s, tx, this.baitY, this.baitZ, speed, dt);
-      if (this.bait === 'charge' && !this.chargeHit && dist < 2.55) {
-        this.chargeHit = true;
-        out.hit = 'shark';
-        s.state = 'retreat';
-        s.timer = 4;
-      }
-      return;
-    }
     if (s.state === 'retreat') {
       s.timer -= dt;
       this.seek(s, s.x - Math.sin(s.yaw) * 4, s.y, s.z - Math.cos(s.yaw) * 4, 3.2, dt);
       this.keepOffLane(s, dt);
-      if (s.timer <= 0) {
-        s.state = 'patrol';
-        s.timer = 12;
-      }
+      if (s.timer <= 0) this.setShark(s, 'patrol', dist, 12);
       return;
     }
     if (s.state === 'warn') {
       s.timer -= dt;
       this.orbitShark(s, diver, dt);
       if (s.timer <= 0) {
-        if (dist < 11) {
-          s.state = 'charge';
-          s.timer = 1.6;
-        } else {
-          s.state = 'patrol';
-          s.timer = 12;
-        }
-      } else if (dist > 16) {
-        s.state = 'patrol';
-        s.timer = 11;
+        if (dist < 16) this.setShark(s, 'charge', dist, 1.6);
+        else this.setShark(s, 'patrol', dist, 12);
+      } else if (dist > 26) {
+        this.setShark(s, 'patrol', dist, 11);
       }
       return;
     }
     if (s.state === 'charge') {
-      this.seek(s, diver.x, diver.y + 1, diver.z, 6.1, dt);
+      this.seek(s, diver.x, diver.y, diver.z, 6.1, dt);
       s.timer -= dt;
       if (dist < 2.15) {
-        s.state = 'retreat';
-        s.timer = 4.5;
+        this.setShark(s, 'retreat', dist, 4.5);
         out.hit = out.hit ?? 'shark';
-      } else if (s.timer <= 0 || dist > 14) {
-        s.state = 'patrol';
-        s.timer = 12;
+      } else if (s.timer <= 0 || dist > 18) {
+        this.setShark(s, 'patrol', dist, 12);
       }
+      return;
+    }
+    // Close enough to see is close enough to warn, including the bait-ball run.
+    if (aggro && !this.calmSpawn() && s.timer <= 0 && dist < 18) {
+      this.setShark(s, 'warn', dist, 2.7);
+      out.sharkWarn = true;
+      out.sharkThreat = true;
+      this.orbitShark(s, diver, dt);
+      return;
+    }
+    if (scripted) {
+      const tx = this.baitX + (this.bait === 'scatter' ? 8 : 0);
+      const speed = this.bait === 'charge' ? 7.2 : 3.4;
+      this.seek(s, tx, this.baitY, this.baitZ, speed, dt);
       return;
     }
     s.timer = Math.max(0, s.timer - dt);
@@ -895,12 +919,6 @@ export class OceanLife {
     this.keepOffLane(s, dt);
     const floor = terrainHeight(s.x, s.z);
     if (s.y < floor + 1.8) s.y = floor + 1.8;
-    if (aggro && !this.calmSpawn() && s.timer <= 0 && dist < 8.8) {
-      s.state = 'warn';
-      s.timer = 2.7;
-      out.sharkWarn = true;
-      out.sharkThreat = true;
-    }
   }
 
   private stepOrca(s: Swimmer, dt: number, diver: Vector3, events: boolean, out: SimEvent): void {
@@ -985,14 +1003,23 @@ export class OceanLife {
   private writeSchool(): void {
     for (let i = 0; i < this.boids.length; i++) {
       const b = this.boids[i];
+      const yaw = Math.atan2(b.vx, b.vz);
+      const wag = Math.sin(this.t * 8 + i * 0.7) * 0.55;
       this.dummy.position.set(b.x, b.y, b.z);
-      this.dummy.rotation.set(0, Math.atan2(b.vx, b.vz), 0);
+      this.dummy.rotation.set(Math.sin(this.t * 6 + i) * 0.18, yaw, Math.sin(this.t * 7 + i) * 0.22);
       const sc = 0.85 + (i % 5) * 0.04;
       this.dummy.scale.setScalar(sc);
       this.dummy.updateMatrix();
       this.school.setMatrixAt(i, this.dummy.matrix);
+      const back = 0.16;
+      this.dummy.position.set(b.x - Math.sin(yaw) * back, b.y, b.z - Math.cos(yaw) * back);
+      this.dummy.rotation.set(0, yaw + wag, Math.sin(this.t * 8 + i) * 0.35);
+      this.dummy.scale.setScalar(sc);
+      this.dummy.updateMatrix();
+      this.schoolTail.setMatrixAt(i, this.dummy.matrix);
     }
     this.school.instanceMatrix.needsUpdate = true;
+    this.schoolTail.instanceMatrix.needsUpdate = true;
   }
 
   private rebuildSnaps(): void {
@@ -1075,6 +1102,18 @@ export class OceanLife {
       { geo: UNIT.sphere, matrix: M(0, 0.01, -0.1, 0, 0, 0, 0.012, 0.055, 0.05), color },
     ]);
     const mat = new MeshLambertMaterial({ color: 0xd5dee8, flatShading: true });
+    const mesh = new InstancedMesh(geo, mat, 56);
+    mesh.frustumCulled = false;
+    mesh.instanceMatrix.setUsage(DynamicDrawUsage);
+    const m = new Matrix4();
+    for (let i = 0; i < 56; i++) mesh.setMatrixAt(i, m);
+    return mesh;
+  }
+
+  private buildSchoolTail(): InstancedMesh {
+    const color = new Color(0xc5d0dc);
+    const geo = mergeParts([{ geo: UNIT.sphere, matrix: M(0, 0, 0, 0, 0, 0, 0.01, 0.045, 0.07), color }]);
+    const mat = new MeshLambertMaterial({ color: 0xc5d0dc, flatShading: true });
     const mesh = new InstancedMesh(geo, mat, 56);
     mesh.frustumCulled = false;
     mesh.instanceMatrix.setUsage(DynamicDrawUsage);
