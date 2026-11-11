@@ -167,8 +167,8 @@ export function createWorld(): World {
       const waterMix = Math.max(under, diveT * 0.85);
       fog.color.copy(air).lerp(shallow, Math.min(1, waterMix * 1.35)).lerp(deep, diveT);
       fog.density = 0.008 + waterMix * 0.012 + diveT * 0.042;
-      hemi.intensity = 0.95 - diveT * 0.62;
-      sun.intensity = 1.4 - diveT * 1.05;
+      hemi.intensity = 1.05 - diveT * 0.42;
+      sun.intensity = 1.45 - diveT * 0.62;
       const mat = floor.material as ShaderMaterial;
       mat.uniforms.uTime.value = time;
       waterMat.opacity = camY > 0.4 ? 0.3 : 0.55;

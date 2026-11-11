@@ -308,6 +308,50 @@ assert(leftShelf > -14, `left shelf stays shallow ${leftShelf}`);
 assert(underSpawn < -16, `spawn drop ${underSpawn}`);
 assert(Math.abs(depthMeters(-1.88) - 0.98) < 0.02, 'surface depth');
 
+const aimedClown = scoreFrame({
+  subjects: [
+    subject({
+      species: 'clownfish',
+      rarity: 12,
+      acting: true,
+      fill: 0.16,
+      radiusNdcX: 0.08,
+      radiusNdcY: 0.16,
+      ndcX: 0.05,
+      ndcY: -0.04,
+      distance: 2.2,
+      optimal: 2.2,
+    }),
+    subject({
+      species: 'turtle',
+      rarity: 16,
+      fill: 0.42,
+      radiusNdcX: 0.28,
+      radiusNdcY: 0.42,
+      ndcX: 0.62,
+      ndcY: 0.35,
+      distance: 7,
+      optimal: 7,
+    }),
+    subject({
+      species: 'manta',
+      rarity: 18,
+      fill: 0.55,
+      radiusNdcX: 0.4,
+      radiusNdcY: 0.55,
+      ndcX: -0.7,
+      ndcY: 0.2,
+      distance: 9,
+      optimal: 11,
+    }),
+  ],
+  depth: 8,
+  nearestPredator: 30,
+});
+assert(aimedClown.species === 'clownfish', `reticle picks clownfish, got ${aimedClown.species}`);
+const riseAt4 = buoyancyAccel(4) / BALANCE.waterDrag;
+assert(riseAt4 >= 0.5 && riseAt4 <= 0.8, `shallow rise ${riseAt4.toFixed(2)}`);
+
 console.log('scoring ok', {
   turtle: turtle.total,
   actingTurtle: actingTurtle.total,

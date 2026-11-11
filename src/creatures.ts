@@ -43,6 +43,8 @@ export interface SimEvent {
   sharkCharge: boolean;
   /** True while a shark is charging. */
   sharkCharging: boolean;
+  /** True on the frame the octopus colour show becomes visible nearby. */
+  octopusStart: boolean;
 }
 
 interface Boid {
@@ -108,8 +110,14 @@ export class OceanLife {
   private orca!: Swimmer;
   private orcaHit = false;
   private orcaTold = false;
-  /** Charge aim. `start` is the gap when the charge began, so a sprint that opens it ends the run. */
-  private chargeDir = new Map<Swimmer, { x: number; y: number; z: number; ox: number; oy: number; oz: number; start: number }>();
+  /** Charge aim. `min` is the closest gap so far; a sprint that opens it ends the run. */
+  private chargeDir = new Map<Swimmer, { x: number; y: number; z: number; ox: number; oy: number; oz: number; start: number; min: number }>();
+  private diverPx = 0;
+  private diverPy = 0;
+  private diverPz = 0;
+  private diverSpeed = 0;
+  private diverReady = false;
+  private octoTold = false;
   /** Circle frozen on the diver's position when the warning started. A sprint leaves the ring. */
   private orbitAnchor = new Map<Swimmer, { x: number; y: number; z: number; radius: number; ang: number }>();
   private baitTold = false;
@@ -363,7 +371,18 @@ export class OceanLife {
       sharkThreat: false,
       sharkCharge: false,
       sharkCharging: false,
+      octopusStart: false,
     };
+    if (this.diverReady) {
+      this.diverSpeed =
+        Math.hypot(diver.x - this.diverPx, diver.y - this.diverPy, diver.z - this.diverPz) / Math.max(dt, 1e-4);
+    } else {
+      this.diverSpeed = 0;
+    }
+    this.diverPx = diver.x;
+    this.diverPy = diver.y;
+    this.diverPz = diver.z;
+    this.diverReady = true;
     if (this.debugLock > 0) {
       this.debugLock = Math.max(0, this.debugLock - dt);
       if (this.debugOcto) {
@@ -378,7 +397,7 @@ export class OceanLife {
     if (events) this.stepEvents(dt, diver, out);
     this.stepBoids(dt);
     this.stepSwimmers(dt, diver, aggro, events, out);
-    this.stepOctopus();
+    this.stepOctopus(dt, diver, out);
     this.writeSchool();
     this.rebuildSnaps();
     return out;
@@ -835,7 +854,7 @@ export class OceanLife {
       s.yaw += dt * 0.15;
       if (s.y > -0.7) {
         s.state = 'breathe';
-        s.timer = 5.4;
+        s.timer = 6.5;
         s.y = -0.55;
       }
     } else if (s.state === 'breathe') {
@@ -850,8 +869,8 @@ export class OceanLife {
         s.timer = 34;
       }
     }
-    const turtleDist = Math.hypot(s.x - diver.x, s.y - (diver.y + 1), s.z - diver.z);
-    if (s.state === 'breathe' && !this.turtleTold && turtleDist < 12) {
+    const turtleDist = Math.hypot(s.x - diver.x, s.y - diver.y, s.z - diver.z);
+    if (s.state === 'breathe' && !this.turtleTold && turtleDist < 16) {
       this.turtleTold = true;
       out.turtleStart = true;
     }
@@ -887,7 +906,12 @@ export class OceanLife {
     s.yaw = Math.atan2(a.x - s.x, a.z - s.z);
   }
 
-  /** Lock a run at the diver. The charge is slower than a sprint, and it ends if the gap opens. */
+  /** A sprint is well above a drift or a cruise kick, and below a one-frame teleport. */
+  private diverSprinting(): boolean {
+    return this.diverSpeed > 3.05 && this.diverSpeed < 8;
+  }
+
+  /** Lock a run at the diver. It keeps homing until it touches a diver who only drifts. */
   private commitCharge(s: Swimmer, dist: number): void {
     this.chargeDir.set(s, {
       x: 0,
@@ -897,8 +921,9 @@ export class OceanLife {
       oy: s.y,
       oz: s.z,
       start: dist,
+      min: dist,
     });
-    this.setShark(s, 'charge', dist, 3.85);
+    this.setShark(s, 'charge', dist, 12);
   }
 
   private setShark(s: Swimmer, next: string, dist: number, timer: number): void {
@@ -913,7 +938,7 @@ export class OceanLife {
     const scripted = s === this.sharkA && this.bait !== 'flock' && !this.calmSpawn();
     // `diver` is already the chest. An extra +1 m hid sharks that were plainly on screen.
     const dist = Math.hypot(s.x - diver.x, s.y - diver.y, s.z - diver.z);
-    // Chest above this is a head at the surface. A shark does not follow you out.
+    // Don't open a new warning on someone already at the surface.
     const surfaced = diver.y > -1.05;
     if (s.state === 'warn') out.sharkThreat = true;
     if (s.state === 'charge') out.sharkCharging = true;
@@ -928,12 +953,16 @@ export class OceanLife {
       s.timer -= dt;
       this.holdCircle(s, dt);
       const now = Math.hypot(s.x - diver.x, s.y - diver.y, s.z - diver.z);
-      // The ring stays put, so a sprint during this second opens the gap.
-      // Past ~12 m the charge would fall short; the shark gives up instead.
-      if (surfaced || now > 12.4) {
+      const anchor = this.orbitAnchor.get(s);
+      const moved = anchor
+        ? Math.hypot(diver.x - anchor.x, diver.y - anchor.y, diver.z - anchor.z)
+        : 0;
+      // The ring stays put. A sprint leaves it; a buoyancy drift does not.
+      const fled = this.diverSprinting() || moved > 2.05 || now > 13.5;
+      if (fled) {
         this.setShark(s, 'patrol', now, 11);
       } else if (s.timer <= 0) {
-        if (now <= 11.5) {
+        if (now <= 12.2) {
           this.commitCharge(s, now);
           out.sharkCharge = true;
           out.sharkCharging = true;
@@ -942,8 +971,8 @@ export class OceanLife {
       return;
     }
     if (s.state === 'charge') {
-      // 2.5 m/s is under the 4.16 m/s sprint. Steering onto the diver finishes a
-      // sink or a drift. A sprint opens the gap and the run ends.
+      // 2.5 m/s homes on a diver who sinks, rises, or drifts, until contact.
+      // A sprint is faster than that and the shark breaks off.
       const aim = this.chargeDir.get(s);
       const speed = 2.5;
       const dx = diver.x - s.x;
@@ -961,13 +990,15 @@ export class OceanLife {
       }
       const floor = terrainHeight(s.x, s.z);
       if (s.y < floor + 1.15) s.y = floor + 1.15;
+      if (s.y > -0.85) s.y = -0.85;
       s.timer -= dt;
       const now = Math.hypot(s.x - diver.x, s.y - diver.y, s.z - diver.z);
-      const opened = aim ? now > aim.start + 1.5 : false;
+      if (aim) aim.min = Math.min(aim.min, now);
+      const opened = aim ? now > aim.min + 1.55 : false;
       if (now < 2.2) {
         this.setShark(s, 'retreat', now, 4.5);
         out.hit = out.hit ?? 'shark';
-      } else if (surfaced || opened || s.timer <= 0 || now > 13.2) {
+      } else if (this.diverSprinting() || opened || s.timer <= 0 || now > 18) {
         this.setShark(s, 'patrol', now, 12);
       }
       return;
@@ -1070,14 +1101,33 @@ export class OceanLife {
     if (s.y > -1.7 && s.species !== 'turtle') s.y = -1.7;
   }
 
-  private stepOctopus(): void {
-    const cycle = this.t % 9;
-    this.displaying = cycle > 3;
+  private stepOctopus(dt: number, diver: Vector3, out: SimEvent): void {
+    // Six seconds in the open, then back in the crevice. Long enough to turn and shoot.
+    const cycle = this.t % 14;
+    this.displaying = cycle > 8;
+    const homeX = LANDMARKS.octopus.x;
+    const homeZ = LANDMARKS.octopus.z;
+    const showX = homeX + 2.5;
+    const showZ = homeZ + 0.4;
+    const tx = this.displaying ? showX : homeX;
+    const tz = this.displaying ? showZ : homeZ;
+    const floor = terrainHeight(tx, tz);
+    const ty = floor + (this.displaying ? 1.25 : 0.5);
+    const blend = Math.min(1, dt * (this.displaying ? 2.2 : 1.1));
+    this.octoX += (tx - this.octoX) * blend;
+    this.octoY += (ty - this.octoY) * blend;
+    this.octoZ += (tz - this.octoZ) * blend;
     const color = this.displaying ? OCTO_SHOW[Math.floor(this.t / 0.85) % OCTO_SHOW.length] : 0x6a5348;
     this.octopus.userData.displayColor = color;
     animateTail(this.octopus, this.t, 1.4, 0);
     this.octopus.position.set(this.octoX, this.octoY, this.octoZ);
-    this.octopus.rotation.y = Math.sin(this.t * 0.2) * 0.4;
+    this.octopus.rotation.y = this.displaying ? Math.sin(this.t * 0.6) * 0.4 : Math.sin(this.t * 0.2) * 0.25;
+    const dist = Math.hypot(this.octoX - diver.x, this.octoY - diver.y, this.octoZ - diver.z);
+    if (this.displaying && !this.octoTold && dist < 16) {
+      this.octoTold = true;
+      out.octopusStart = true;
+    }
+    if (!this.displaying) this.octoTold = false;
   }
 
   private writeSchool(): void {

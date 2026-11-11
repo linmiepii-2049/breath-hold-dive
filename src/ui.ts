@@ -68,7 +68,7 @@ export interface UIModel {
   burstCd: number;
   sharkThreat: boolean;
   sharkCharging: boolean;
-  toasts: string[];
+  toasts: { key: string; text?: string }[];
   flash: number;
   vignette: number;
   blackout: number;
@@ -591,7 +591,7 @@ export class GameUI {
     if (pauseHint) pauseHint.innerHTML = m.atSurface ? t('hud.pauseHint') : t('hud.pauseSteer');
     this.root.classList.toggle('charging', m.sharkCharging && !m.atSurface);
     const toast = this.root.querySelector('#toasts');
-    if (toast) toast.innerHTML = m.toasts.map((key) => `<div class="toast">${t(key)}</div>`).join('');
+    if (toast) toast.innerHTML = m.toasts.map((item) => `<div class="toast">${item.text ?? t(item.key)}</div>`).join('');
     const vig = this.root.querySelector('#vignette') as HTMLElement | null;
     const black = this.root.querySelector('#blackout') as HTMLElement | null;
     const flash = this.root.querySelector('#flash') as HTMLElement | null;

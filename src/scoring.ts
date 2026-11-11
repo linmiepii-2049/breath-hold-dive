@@ -114,19 +114,30 @@ function seenFactor(clarity: number): number {
   return 0.3 + ((clarity - 0.15) / 0.6) * 0.7;
 }
 
+/**
+ * Who the shutter is aimed at. A small animal on the reticle beats a larger
+ * one toward the edge, and a closer animal beats a bigger one at the same aim.
+ */
+function aimWeight(s: FrameSubject): number {
+  const off = Math.hypot(s.ndcX, s.ndcY);
+  const body = Math.max(0.05, Math.hypot(s.radiusNdcX, s.radiusNdcY));
+  const onReticle = off <= Math.max(0.16, body * 0.7);
+  const center = 1 / (0.1 + off * off);
+  const closeness = 1 / Math.max(0.45, s.distance);
+  return (onReticle ? 6 : 1) * center * closeness * (0.35 + s.clarity);
+}
+
 export function scoreFrame(input: ScoreInput): ScoreBreakdown {
   let best: FrameSubject | null = null;
   let bestWeight = -1;
   let bestComp = 0;
   for (const s of input.subjects) {
-    const comp = compositionOf(s);
     if (!inFrame(s)) continue;
-    const readable = Math.min(1, s.fill / 0.16);
-    const weight = comp * 1.15 + s.rarity * 0.55 * readable + Math.min(s.fill, 0.7) * 18 + (momentWorthy(s) ? 8 : 0);
+    const weight = aimWeight(s);
     if (weight > bestWeight) {
       bestWeight = weight;
       best = s;
-      bestComp = comp;
+      bestComp = compositionOf(s);
     }
   }
 
