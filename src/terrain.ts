@@ -41,6 +41,9 @@ export function terrainHeight(x: number, z: number): number {
 
   // Keep the far corners from spiking above the playable trench.
   if (z > 8) y = Math.min(y, -4.5 + dunes * 0.25);
+  // 41 m on the depth gauge is the floor everywhere. A diver resting on the
+  // sand has feet about 1.12 m above this height, and depthMeters of that pose is 41.
+  if (y < -42.12) y = -42.12;
   return y;
 }
 

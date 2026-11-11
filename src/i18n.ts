@@ -52,8 +52,8 @@ const STR: Record<string, { zh: string; en: string }> = {
   'train.cap': { zh: '今天的训练做完了。下潜一次，第二天才会重新开放。', en: 'No sessions left today. Finish a dive and a new day opens them again.' },
   'train.breath': { zh: '呼吸节奏', en: 'Breathing rhythm' },
   'train.breath.desc': {
-    zh: '白点每拍从左走到右。它进入右侧亮区时，点按这一拍：吸气 J 或 ↑，屏息 K 或空格，呼气 L 或 ↓。太早按不会作废，进亮区再按即可，按住到亮区也算。约 45 秒。',
-    en: 'The dot travels left to right each beat. When it is inside the bright band, tap that beat: inhale J or ↑, hold K or Space, exhale L or ↓. An early tap does not burn the beat. Holding into the band also counts. About 45 seconds.',
+    zh: '白点每拍从左走到右。它进入右侧亮区时，点按这一拍：吸气 J 或 ↑，屏息 K 或空格，呼气 L 或 ↓。太早按不会作废，进亮区再按即可，按住到亮区也算。约 30 秒。',
+    en: 'The dot travels left to right each beat. When it is inside the bright band, tap that beat: inhale J or ↑, hold K or Space, exhale L or ↓. An early tap does not burn the beat. Holding into the band also counts. About 30 seconds.',
   },
   'train.apnea': { zh: '静态闭气', en: 'Static apnea' },
   'train.apnea.desc': {
@@ -61,8 +61,8 @@ const STR: Record<string, { zh: string; en: string }> = {
     en: 'The heart speeds up. Hold Space to keep it under the line. Longer control means slower oxygen drain. About 40 seconds.',
   },
   'train.breath.descTouch': {
-    zh: '白点每拍从左走到右。它进入右侧亮区时，点按这一拍：吸气、屏息、呼气。太早按不会作废，进亮区再按即可，按住到亮区也算。约 45 秒。',
-    en: 'The dot travels left to right each beat. When it is inside the bright band, tap that beat: Inhale, Hold, or Exhale. An early tap does not burn the beat. Holding into the band also counts. About 45 seconds.',
+    zh: '白点每拍从左走到右。它进入右侧亮区时，点按这一拍：吸气、屏息、呼气。太早按不会作废，进亮区再按即可，按住到亮区也算。约 30 秒。',
+    en: 'The dot travels left to right each beat. When it is inside the bright band, tap that beat: Inhale, Hold, or Exhale. An early tap does not burn the beat. Holding into the band also counts. About 30 seconds.',
   },
   'train.apnea.descTouch': {
     zh: '心跳会越来越快。按住按钮把心率压在红线以下，越久，下潜时耗氧越慢。约 40 秒。',

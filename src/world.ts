@@ -68,7 +68,7 @@ export interface World {
   hemi: import('three').HemisphereLight;
   sun: import('three').DirectionalLight;
   solids: Solid[];
-  update(time: number, camY: number, diverDepth: number, diverX?: number, diverY?: number, diverZ?: number): void;
+  update(time: number, camY: number, diverDepth: number, diverX?: number, diverY?: number, diverZ?: number, camX?: number, camZ?: number): void;
   /** Full detail draws light shafts. The low tier hides them and eases the fog. */
   setDetail(full: boolean): void;
 }
@@ -166,16 +166,16 @@ export function createWorld(): World {
     hemi,
     sun,
     solids,
-    update(time, camY, diverDepth, diverX = 0, diverY = -diverDepth, diverZ = 0) {
+    update(time, camY, diverDepth, diverX = 0, diverY = -diverDepth, diverZ = 0, camX = diverX, camZ = diverZ) {
       const diveT = Math.min(1, diverDepth / 42);
       const under = Math.min(1, Math.max(0, (0.4 - camY) / 4));
       const waterMix = Math.max(under, diveT * 0.85);
-      fog.color.copy(air).lerp(shallow, Math.min(1, waterMix * 1.05)).lerp(deep, diveT * 0.16);
-      const haze = 0.002 + waterMix * 0.0016 + diveT * 0.0028;
-      // Near the diver the water stays thin on every tier. The low tier is thinner still.
-      fog.density = detail ? haze : haze * 0.55;
-      hemi.intensity = 1.45 - diveT * 0.06;
-      sun.intensity = 1.7 - diveT * 0.08;
+      // Distance falls toward deep blue. Density stays low inside ~12 m so the near reef is not a smudge.
+      fog.color.copy(air).lerp(shallow, Math.min(1, waterMix * 1.05)).lerp(deep, 0.22 + diveT * 0.62);
+      const haze = 0.0022 + waterMix * 0.0022 + diveT * 0.0075;
+      fog.density = detail ? haze : haze * 0.72;
+      hemi.intensity = 1.4 - diveT * 0.12;
+      sun.intensity = 1.6 - diveT * 0.18;
       const floorMat = floor.material as ShaderMaterial;
       floorMat.uniforms.uNear.value.set(diverX, diverY, diverZ);
       floorMat.uniforms.uTime.value = time;
@@ -193,15 +193,24 @@ export function createWorld(): World {
       fans.forEach((m, i) => {
         m.rotation.y = (m.userData.baseY as number) + Math.sin(time * 0.6 + i) * 0.08;
       });
-      // Hide the trail where it would pass through the diver. The next beads still show the way.
+      // Hide any piece of the trail whose closest point is within 1.5 m of the body.
+      // A long link used to fade from its center and still cut through the torso.
       for (let i = 0; i < guideFades.length; i++) {
         const mesh = guideFades[i];
-        const d = Math.hypot(mesh.position.x - diverX, mesh.position.y - diverY, mesh.position.z - diverZ);
-        // A link is a few metres long, so hide anything whose center is still near the body.
-        const t = Math.max(0, Math.min(1, (d - 2.4) / 1.8));
+        const seg = mesh.userData.seg as GuideSeg;
+        const d = Math.min(
+          distToSeg(diverX, diverY, diverZ, seg),
+          distToSeg(diverX, diverY - 0.75, diverZ, seg),
+          distToSeg(diverX, diverY + 0.45, diverZ, seg),
+        );
+        const dCam = distToSeg(camX, camY, camZ, seg);
+        const bodyT = Math.max(0, Math.min(1, (d - 1.5) / 1.15));
+        // A bead in the follow lens becomes a screen-filling disc. Hide that, keep the ones ahead.
+        const camT = Math.max(0, Math.min(1, (dCam - 3.4) / 1.3));
+        const t = Math.min(bodyT, camT);
         const fade = t * t * (3 - 2 * t);
         const mat = mesh.material as MeshBasicMaterial;
-        mat.opacity = fade;
+        mat.opacity = (mesh.userData.baseOpacity as number) * fade;
         mesh.visible = fade > 0.05;
       }
       if (detail) {
@@ -231,8 +240,39 @@ export function createWorld(): World {
 const guideUp = new Vector3(0, 1, 0);
 const guideDir = new Vector3();
 
-function guideMaterial(color: number): MeshBasicMaterial {
-  return new MeshBasicMaterial({ color, fog: false, transparent: true, opacity: 1, depthWrite: false });
+interface GuideSeg {
+  ax: number;
+  ay: number;
+  az: number;
+  bx: number;
+  by: number;
+  bz: number;
+}
+
+function guideMaterial(color: number, opacity = 1): MeshBasicMaterial {
+  const mat = new MeshBasicMaterial({
+    color,
+    fog: false,
+    transparent: true,
+    opacity,
+    depthWrite: false,
+  });
+  return mat;
+}
+
+function distToSeg(px: number, py: number, pz: number, seg: GuideSeg): number {
+  const abx = seg.bx - seg.ax;
+  const aby = seg.by - seg.ay;
+  const abz = seg.bz - seg.az;
+  const ab2 = abx * abx + aby * aby + abz * abz || 1e-6;
+  let t = ((px - seg.ax) * abx + (py - seg.ay) * aby + (pz - seg.az) * abz) / ab2;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (seg.ax + abx * t), py - (seg.ay + aby * t), pz - (seg.az + abz * t));
+}
+
+function tagSeg(mesh: Mesh, ax: number, ay: number, az: number, bx: number, by: number, bz: number, opacity: number): void {
+  mesh.userData.seg = { ax, ay, az, bx, by, bz };
+  mesh.userData.baseOpacity = opacity;
 }
 
 /** Bead x at this z. It stays in the deep channel, just off the diver's lane. */
@@ -244,12 +284,16 @@ function beadX(z: number): number {
 function beadHeight(x: number, z: number): number {
   const floor = terrainHeight(x, z);
   const glide = -3.2 - Math.max(0, z - 11) * 0.72;
+  // The follow camera looks down at 45°, so a head-high line leaves the frame.
+  // On the trench floor the beads sit on the sand, where that camera still sees several ahead.
+  if (glide < floor + 1.2) return floor + 0.5;
   return Math.max(floor + 1.8, glide);
 }
 
 function guideBead(g: Group, fades: Mesh[], x: number, z: number, color: number, radius: number, y: number): Vector3 {
-  const m = new Mesh(new SphereGeometry(radius, 10, 8), guideMaterial(color));
+  const m = new Mesh(new SphereGeometry(radius, 12, 10), guideMaterial(color));
   m.position.set(x, y, z);
+  tagSeg(m, x, y, z, x, y, z, 1);
   g.add(m);
   fades.push(m);
   return m.position.clone();
@@ -259,11 +303,22 @@ function guideLink(g: Group, fades: Mesh[], a: Vector3, b: Vector3, color: numbe
   guideDir.copy(b).sub(a);
   const len = guideDir.length();
   if (len < 0.05) return;
-  const mesh = new Mesh(new CylinderGeometry(radius, radius, len, 5), guideMaterial(color));
-  mesh.position.copy(a).lerp(b, 0.5);
-  mesh.quaternion.setFromUnitVectors(guideUp, guideDir.multiplyScalar(1 / len));
-  g.add(mesh);
-  fades.push(mesh);
+  const steps = Math.max(1, Math.ceil(len / 0.65));
+  for (let i = 0; i < steps; i++) {
+    const t0 = i / steps;
+    const t1 = (i + 1) / steps;
+    const pa = a.clone().lerp(b, t0);
+    const pb = a.clone().lerp(b, t1);
+    const dir = pb.clone().sub(pa);
+    const piece = dir.length();
+    if (piece < 0.02) continue;
+    const mesh = new Mesh(new CylinderGeometry(radius, radius, piece, 5), guideMaterial(color));
+    mesh.position.copy(pa).lerp(pb, 0.5);
+    mesh.quaternion.setFromUnitVectors(guideUp, dir.multiplyScalar(1 / piece));
+    tagSeg(mesh, pa.x, pa.y, pa.z, pb.x, pb.y, pb.z, 1);
+    g.add(mesh);
+    fades.push(mesh);
+  }
 }
 
 /** Gold beads and a connecting trail down the offshore lane, plus an orange branch to the anemone. */
@@ -272,7 +327,7 @@ function buildTrenchGuide(fades: Mesh[]): Group {
   const gold = 0xffc24a;
   const orange = 0xff5a18;
   let prev: Vector3 | null = null;
-  for (let z = 11; z <= 72; z += 3.4) {
+  for (let z = 11; z <= 84; z += 2.5) {
     const x = beadX(z);
     const p = guideBead(g, fades, x, z, gold, 0.32, beadHeight(x, z));
     if (prev) guideLink(g, fades, prev, p, gold, 0.045);
@@ -282,6 +337,7 @@ function buildTrenchGuide(fades: Mesh[]): Group {
   const lipZ = 26;
   const lipX = beadX(lipZ);
   post.position.set(lipX, terrainHeight(lipX, lipZ) + 4, lipZ);
+  tagSeg(post, lipX, post.position.y - 4, lipZ, lipX, post.position.y + 4, lipZ, 1);
   g.add(post);
   fades.push(post);
   const ax = LANDMARKS.anemone.x + 3.1;
@@ -298,6 +354,7 @@ function buildTrenchGuide(fades: Mesh[]): Group {
   }
   const pole = new Mesh(new CylinderGeometry(0.045, 0.045, 5.5, 5), guideMaterial(orange));
   pole.position.set(ax, terrainHeight(ax, az) + 2.4, az);
+  tagSeg(pole, ax, pole.position.y - 2.75, az, ax, pole.position.y + 2.75, az, 1);
   g.add(pole);
   fades.push(pole);
   return g;
@@ -372,9 +429,11 @@ function buildFloor(): Mesh {
         col += vec3(0.18, 0.28, 0.26) * rim * (1.0 - deepT * 0.35);
         col *= mix(1.0, 0.97, deepT);
         float nearD = distance(vWorld, uNear);
-        float nearK = 1.0 - smoothstep(2.0, 11.0, nearD);
-        col += vec3(0.2, 0.26, 0.2) * nearK;
-        col = mix(col, col * vec3(1.12, 1.18, 1.14) + vec3(0.05, 0.07, 0.05), nearK);
+        float nearK = 1.0 - smoothstep(1.5, 12.0, nearD);
+        // Far trench sand recedes. The patch within ~12 m of the diver stays a readable tan.
+        float grain = sin(vWorld.x * 1.6 + vWorld.z * 0.4) * sin(vWorld.z * 1.35);
+        vec3 deepSand = vec3(0.46, 0.56, 0.50) * (0.78 + 0.28 * lam) + vec3(0.05, 0.04, 0.02) * grain;
+        col = mix(col, mix(col * 0.34, deepSand, nearK), deepT);
         gl_FragColor = vec4(col, 1.0);
         #include <fog_fragment>
       }
@@ -502,7 +561,12 @@ function buildReef(solids: Solid[]): Mesh {
     pushRock(solids, x, py, z, rx, ry, rz, s, s * 0.7, s);
   }
   const geo = mergeParts(parts);
-  const mat = new MeshLambertMaterial({ vertexColors: true, flatShading: true });
+  const mat = new MeshLambertMaterial({
+    vertexColors: true,
+    flatShading: true,
+    emissive: 0x163038,
+    emissiveIntensity: 0.7,
+  });
   return new Mesh(geo, mat);
 }
 
@@ -528,7 +592,15 @@ function buildWall(solids: Solid[]): Mesh {
     pushRock(solids, x, py, z, rx, ry, rz, s, h, s * 0.8);
   }
   const geo = mergeParts(parts);
-  return new Mesh(geo, new MeshLambertMaterial({ vertexColors: true, flatShading: true }));
+  return new Mesh(
+    geo,
+    new MeshLambertMaterial({
+      vertexColors: true,
+      flatShading: true,
+      emissive: 0x163038,
+      emissiveIntensity: 0.7,
+    }),
+  );
 }
 
 function buildBeach(): Group {

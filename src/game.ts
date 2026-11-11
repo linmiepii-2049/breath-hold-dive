@@ -10,6 +10,7 @@ import {
   PerspectiveCamera,
   PointLight,
   Scene,
+  SpotLight,
   SphereGeometry,
   SRGBColorSpace,
   Vector3,
@@ -81,8 +82,9 @@ export class Game {
   private fpCam: PerspectiveCamera;
   private diver: ReturnType<typeof makeDiver>;
   private fillLight = new PointLight(0xf4fff8, 9.5, 22, 1);
-  private nearLight = new PointLight(0xfff6e4, 5.4, 14, 1);
+  private nearLight = new PointLight(0xfff6e4, 8, 12, 1);
   private rimLight = new PointLight(0xffe7c2, 4.2, 16, 1);
+  private headlamp = new SpotLight(0xfff3d2, 18, 14, 0.72, 0.45, 1);
   private forceLow = false;
   private linedUp = false;
   private shadow: Mesh;
@@ -234,6 +236,8 @@ export class Game {
     this.scene.add(this.fillLight);
     this.scene.add(this.nearLight);
     this.scene.add(this.rimLight);
+    this.scene.add(this.headlamp);
+    this.scene.add(this.headlamp.target);
     this.shadow = new Mesh(
       new CircleGeometry(0.7, 14),
       new MeshBasicMaterial({ color: 0x021016, transparent: true, opacity: 0.28, depthWrite: false }),
@@ -260,11 +264,12 @@ export class Game {
     this.life.setDebug(this.debugOn);
     if (this.debugOn) {
       const hook = window as unknown as {
-        __bhDebug?: { air: () => void; warn: (meters?: number) => void };
+        __bhDebug?: { air: () => void; warn: (meters?: number) => void; turtleBreath: () => void };
       };
       hook.__bhDebug = {
         air: () => this.debugAir(),
         warn: (meters?: number) => this.debugWarn(meters ?? 8),
+        turtleBreath: () => this.debugTurtleBreath(),
       };
     }
 
@@ -532,7 +537,10 @@ export class Game {
     }
 
     const stepping = !(this.mode === 'dive' && this.paused);
-      if (stepping && this.mode === 'dive' && !this.wantJudge) this.applyLook(frameDt);
+      if (stepping && this.mode === 'dive' && !this.wantJudge) {
+      this.applyLook(frameDt);
+      this.assistTouchAim();
+    }
     if (stepping) {
       this.accum += frameDt;
       const step = 1 / 60;
@@ -596,7 +604,16 @@ export class Game {
       }
       if (diving && this.viewfinder && this.lmb && this.aimNow) this.shoot(this.aimNow.score);
       const depth = this.mode === 'dive' ? depthMeters(this.feet.y) : 0;
-      this.world.update(this.time, this.cam.position.y, depth, this.feet.x, this.feet.y + 1, this.feet.z);
+      this.world.update(
+        this.time,
+        this.cam.position.y,
+        depth,
+        this.feet.x,
+        this.feet.y + 1,
+        this.feet.z,
+        this.cam.position.x,
+        this.cam.position.z,
+      );
       moveSnell(this.world.snell, this.cam.position.x, this.cam.position.z);
       if (this.debugOn && this.mode === 'dive') {
         this.debugLogT += dt;
@@ -646,6 +663,21 @@ export class Game {
     }
 
     const depth = this.mode === 'dive' ? depthMeters(this.feet.y) : 0;
+    const deepK = clamp((depth - 8) / 28, 0, 1);
+    // The chest light stays gentle so the suit does not blow out. The follow camera
+    // carries a fill that lights rocks within about 10 m, and it falls off after that.
+    this.nearLight.intensity = 5.4 * (1 - deepK * 0.4);
+    this.nearLight.distance = 12;
+    this.nearLight.decay = 1 + deepK;
+    this.fillLight.intensity = 9.5 * (1 - deepK) + deepK * 44;
+    this.fillLight.distance = 22 - deepK * 4;
+    this.fillLight.decay = 1 + deepK;
+    const fp = this.mode === 'dive' && this.viewfinder;
+    this.headlamp.intensity = fp ? 6 + deepK * 18 : 1.5 + deepK * 3;
+    this.headlamp.distance = 13;
+    this.headlamp.decay = 2;
+    this.headlamp.angle = 0.82;
+    this.headlamp.penumbra = 0.5;
     this.audio.setUnderwater(this.cam.position.y < 0.25, depth);
     const o2frac = this.o2 / Math.max(1, maxOxygen(this.save.lung));
     const bpm = this.mode === 'apnea' && this.apnea ? this.apnea.hr : 64 + (1 - clamp(o2frac, 0, 1)) * 88;
@@ -654,10 +686,11 @@ export class Game {
     this.audio.shoreWave(dt, this.mode !== 'dive' && this.mode !== 'judge');
 
     const renderCam = this.mode === 'dive' && this.viewfinder ? this.fpCam : this.cam;
+    const fillBias = 0.65 + deepK * 0.32;
     this.fillLight.position.set(
-      this.feet.x * 0.35 + renderCam.position.x * 0.65,
-      this.feet.y + 1.6,
-      this.feet.z * 0.35 + renderCam.position.z * 0.65,
+      this.feet.x * (1 - fillBias) + renderCam.position.x * fillBias,
+      this.feet.y + 1.6 + (renderCam.position.y - this.feet.y - 1.6) * deepK * 0.9,
+      this.feet.z * (1 - fillBias) + renderCam.position.z * fillBias,
     );
     this.nearLight.position.set(this.feet.x, this.feet.y + 2.6, this.feet.z);
     const side = Math.sin(this.viewYaw);
@@ -666,6 +699,13 @@ export class Game {
       renderCam.position.x - ahead * 0.4 + side * 1.4,
       renderCam.position.y + 0.6,
       renderCam.position.z + side * 0.4 + ahead * 1.4,
+    );
+    this.fillLook(this.viewYaw, this.viewPitch, this.look);
+    this.headlamp.position.set(this.feet.x, this.feet.y + 1.35, this.feet.z);
+    this.headlamp.target.position.set(
+      this.feet.x + this.look.x * 8,
+      this.feet.y + 1.35 + this.look.y * 8,
+      this.feet.z + this.look.z * 8,
     );
     try {
       this.renderer.render(this.scene, renderCam);
@@ -769,6 +809,48 @@ export class Game {
     this.viewYaw -= lookX * BALANCE.lookYaw * sens;
     this.viewPitch -= lookY * BALANCE.lookPitch * sens;
     this.viewPitch = clamp(this.viewPitch, -BALANCE.pitchLimit, BALANCE.pitchLimit);
+  }
+
+  /**
+   * Touch only, and only while the camera is open. If a creature is already near
+   * the bracket, ease the view onto it. A hard drag still wins.
+   */
+  private assistTouchAim(): void {
+    if (!this.touch || !this.viewfinder || this.paused) return;
+    const drag = Math.hypot(this.touchDX, this.touchDY);
+    if (drag > 36) return;
+    const gate = drag > 12 ? 0.28 : 1;
+    const eyeY = this.feet.y + 1.15;
+    let best = 0;
+    let yawErr = 0;
+    let pitchErr = 0;
+    const snaps = this.life.snaps;
+    for (let i = 0; i < snaps.length; i++) {
+      const s = snaps[i];
+      const dx = s.x - this.feet.x;
+      const dy = s.y - eyeY;
+      const dz = s.z - this.feet.z;
+      const dist = Math.hypot(dx, dy, dz);
+      if (dist < 0.7 || dist > 12) continue;
+      const wantYaw = Math.atan2(dx, dz);
+      const wantPitch = Math.atan2(dy, Math.hypot(dx, dz));
+      let dyaw = wantYaw - this.viewYaw;
+      while (dyaw > Math.PI) dyaw -= Math.PI * 2;
+      while (dyaw < -Math.PI) dyaw += Math.PI * 2;
+      const dpitch = wantPitch - this.viewPitch;
+      const err = Math.hypot(dyaw, dpitch);
+      if (err > 0.58) continue;
+      const score = 1 / (0.04 + err) + 0.2 / dist;
+      if (score > best) {
+        best = score;
+        yawErr = dyaw;
+        pitchErr = dpitch;
+      }
+    }
+    if (best <= 0) return;
+    const cap = 0.055 * gate;
+    this.viewYaw += clamp(yawErr * 0.28 * gate, -cap, cap);
+    this.viewPitch = clamp(this.viewPitch + clamp(pitchErr * 0.28 * gate, -cap, cap), -BALANCE.pitchLimit, BALANCE.pitchLimit);
   }
 
   private fillLook(yaw: number, pitch: number, out: Vector3): void {
@@ -1328,6 +1410,7 @@ export class Game {
     const fog = (this.scene.fog as FogExp2).density;
     const { subject, frames } = computeSubject(this.fpCam, this.life.snaps, {
       fog,
+      aimHalf: this.touch ? 0.48 : AIM_HALF,
       visibility: (c, dist) => {
         const half = (this.fpCam.fov * Math.PI) / 360;
         const fill = c.radius / (dist * Math.tan(half));
@@ -1480,6 +1563,14 @@ export class Game {
     this.linedUp = true;
   }
 
+  /** Start the turtle's surface breath just in front of the diver and announce it. */
+  private debugTurtleBreath(): void {
+    if (!this.debugOn) return;
+    if (this.mode !== 'dive') this.beginDive();
+    this.life.startBreathInFront(this.feet.x, this.feet.z);
+    this.pushMoment('toast.turtle', (s) => s.moment === 'turtleBreath');
+  }
+
   /** Drop the tank to about 3% so a reviewer can reach blackout. Drain rates stay the same. */
   private debugAir(): void {
     if (!this.debugOn) return;
@@ -1609,6 +1700,21 @@ export class Game {
     this.nonce++;
   }
 
+  /** Leave a drill that has not finished. The daily attempt comes back, and no stat is granted. */
+  private abandonTrain(): void {
+    const finished = !!this.breath?.done || !!this.apnea?.done;
+    if (finished) {
+      this.finishTrain();
+      return;
+    }
+    this.breath = null;
+    this.apnea = null;
+    this.save.trainsToday = Math.max(0, this.save.trainsToday - 1);
+    writeSave(this.save);
+    this.mode = 'shore';
+    this.nonce++;
+  }
+
   private buy(id: GearId): void {
     const level = this.save.gear[id];
     const cost = BALANCE.costs[id][level];
@@ -1623,7 +1729,7 @@ export class Game {
   private open(mode: UIModel['mode']): void {
     if (mode === 'shore') this.resetArmed = false;
     if (this.mode === 'breath' || this.mode === 'apnea') {
-      this.finishTrain();
+      this.abandonTrain();
       if (mode === 'shore') return;
     }
     this.mode = mode;
@@ -2051,7 +2157,7 @@ export class Game {
       return;
     }
     if (this.mode === 'breath' || this.mode === 'apnea') {
-      this.finishTrain();
+      this.abandonTrain();
       return;
     }
     if (this.mode !== 'shore' && this.mode !== 'judge') this.open('shore');
