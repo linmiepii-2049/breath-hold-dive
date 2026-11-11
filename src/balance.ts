@@ -76,7 +76,7 @@ export const BALANCE = {
   vertical: 2.45,
   film: 5,
   trainsPerDay: 2,
-  breathSeconds: 46,
+  breathSeconds: 32,
   apneaSeconds: 42,
   /** Lung gain at 100% rhythm accuracy. */
   breathGain: 0.08,

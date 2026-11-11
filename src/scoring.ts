@@ -115,8 +115,11 @@ const ACTION_MOMENT = 10;
 
 function actionWorthy(s: FrameSubject): boolean {
   if (!s.acting || !inFrame(s)) return false;
-  if (s.clarity < 0.62 || s.fill < 0.12) return false;
-  return compositionOf(s) >= 12;
+  // A manta's body is a wide thin disc, so a readable glide fills less of the
+  // frame than a turtle at the same distance. It still earns the motion line.
+  const wide = s.species === 'manta';
+  if (s.clarity < (wide ? 0.45 : 0.62) || s.fill < (wide ? 0.05 : 0.12)) return false;
+  return compositionOf(s) >= (wide ? 8 : 12);
 }
 
 /** The moment animal has to be plainly in the picture, not a speck, a haze blob, or a shape behind weed. */

@@ -259,31 +259,11 @@ export class OceanLife {
       return look(0, -8, 30, 8, 0);
     }
     if (id === 'clownfish') {
-      const x = -16;
-      const z = 14;
-      const y = terrainHeight(x, z) + 1.9;
-      let i = 0;
-      for (const s of this.swimmers) {
-        if (s.species !== 'clownfish') continue;
-        if (i === 0) {
-          s.x = x;
-          s.y = y;
-          s.z = z;
-          s.yaw = Math.PI / 2 + 0.45;
-        } else {
-          s.x = x - 1.1;
-          s.y = y + (i - 2) * 0.28;
-          s.z = z + 1.1;
-          s.yaw = Math.PI / 2;
-        }
-        i++;
-      }
+      const x = LANDMARKS.anemone.x;
+      const z = LANDMARKS.anemone.z;
+      const y = terrainHeight(x, z) + 1.05;
       this.shovePlants(x, z, 9);
-      const camZ = z - 2.4;
-      const camFloor = terrainHeight(x, camZ);
-      const feetY = Math.min(BOUNDS.surfaceFeet, Math.max(camFloor + 0.2, y - 1.7));
-      this.poseAll();
-      return { x, y: feetY, z: camZ, yaw: 0, lookX: x, lookY: y + 0.12, lookZ: z };
+      return look(x, y, z, 3.4, -0.2);
     }
     if (id === 'parrotfish') {
       const s = this.swimmer('parrotfish');
@@ -435,12 +415,20 @@ export class OceanLife {
         this.octopus.userData.displayColor = OCTO_SHOW[Math.floor(this.t * 1.4) % OCTO_SHOW.length];
         animateTail(this.octopus, this.t, 1.4, 0);
       }
+      // The rest of the cast holds still. Clownfish keep circling so a teleport
+      // does not leave them as a static stack.
+      for (const s of this.swimmers) {
+        if (s.species === 'clownfish') this.orbitClownfish(s, dt);
+      }
       this.poseAll();
+      this.applySpawnGrace();
+      this.rebuildSnaps();
       return out;
     }
     if (events) this.stepEvents(dt, diver, out);
     this.stepBoids(dt);
     this.stepSwimmers(dt, diver, aggro, events, out);
+    this.applySpawnGrace();
     this.stepOctopus(dt, diver, out);
     this.writeSchool();
     this.rebuildSnaps();
@@ -848,13 +836,7 @@ export class OceanLife {
       const oz = s.prevZ;
       const hadPrev = ox !== undefined && oy !== undefined && oz !== undefined;
       if (s.species === 'clownfish') {
-        const anchorY = terrainHeight(LANDMARKS.anemone.x, LANDMARKS.anemone.z) + 1.05;
-        const w = this.t * 1.55 + s.phase;
-        const rad = 0.9 + (s.wp % 3) * 0.22;
-        s.x = LANDMARKS.anemone.x + Math.cos(w) * rad;
-        s.z = LANDMARKS.anemone.z + Math.sin(w) * rad * 0.82;
-        s.y = anchorY + Math.sin(w * 2) * 0.22;
-        s.yaw = w + Math.PI / 2;
+        this.orbitClownfish(s, dt);
       } else if (s.species === 'parrotfish') {
         this.followWp(s, dt, 1.3);
         const floor = terrainHeight(s.x, s.z);
@@ -908,10 +890,16 @@ export class OceanLife {
       s.timer -= dt;
       if (s.timer <= 0) {
         s.state = 'up';
-        this.turtleAimX = diver.x + 2.6;
-        this.turtleAimZ = diver.z + 3.8;
+        this.turtleAimX = diver.x + 1.1;
+        this.turtleAimZ = diver.z + 2.5;
       }
     } else if (s.state === 'up') {
+      // Keep the breathing spot just in front of the diver until the turtle is close.
+      const lead = Math.hypot(this.turtleAimX - s.x, this.turtleAimZ - s.z);
+      if (lead > 4.5) {
+        this.turtleAimX = diver.x + 1.1;
+        this.turtleAimZ = diver.z + 2.5;
+      }
       const dx = this.turtleAimX - s.x;
       const dz = this.turtleAimZ - s.z;
       const horiz = Math.hypot(dx, dz);
@@ -921,8 +909,8 @@ export class OceanLife {
         s.z += (dz / horiz) * step;
         s.yaw = Math.atan2(dx, dz);
       }
-      if (horiz < 6) s.y += 0.8 * dt;
-      if (s.y > -0.7 && horiz < 6) {
+      if (horiz < 4.5) s.y += 0.8 * dt;
+      if (s.y > -0.7 && horiz < 4.5) {
         s.state = 'breathe';
         s.timer = 10;
         s.y = -0.55;
@@ -952,6 +940,51 @@ export class OceanLife {
   /** Opening of a dive: sharks stay off the straight swim out from spawn. */
   private calmSpawn(): boolean {
     return this.t < 20;
+  }
+
+  /**
+   * For the first 20 s the reef shark is parked well outside the spawn and its
+   * mesh is hidden, so it cannot be the viewfinder subject. A trench shark that
+   * is already deep is left on its route.
+   */
+  private applySpawnGrace(): void {
+    for (const s of this.swimmers) {
+      if (s.species !== 'shark') continue;
+      if (!this.calmSpawn()) {
+        s.mesh.visible = true;
+        continue;
+      }
+      const dist = Math.hypot(s.x - 6.2, s.z - 9);
+      const shallow = s.y > -22;
+      if (s === this.sharkA) {
+        s.x = 34;
+        s.y = -17;
+        s.z = 62;
+        s.mesh.position.set(s.x, s.y, s.z);
+        s.mesh.visible = false;
+      } else if (dist < 40 && shallow) {
+        s.mesh.visible = false;
+      }
+    }
+  }
+
+  private orbitClownfish(s: Swimmer, dt: number): void {
+    const ox = s.prevX;
+    const oy = s.prevY;
+    const oz = s.prevZ;
+    const hadPrev = ox !== undefined && oy !== undefined && oz !== undefined;
+    const anchorY = terrainHeight(LANDMARKS.anemone.x, LANDMARKS.anemone.z) + 1.05;
+    const w = this.t * 1.55 + s.phase;
+    const rad = 0.9 + (s.wp % 3) * 0.22;
+    s.x = LANDMARKS.anemone.x + Math.cos(w) * rad;
+    s.z = LANDMARKS.anemone.z + Math.sin(w) * rad * 0.82;
+    s.y = anchorY + Math.sin(w * 2) * 0.22;
+    s.yaw = w + Math.PI / 2;
+    if (hadPrev) s.travel = Math.hypot(s.x - ox, s.y - oy, s.z - oz) / Math.max(dt, 1e-4);
+    else s.travel = 1.2;
+    s.prevX = s.x;
+    s.prevY = s.y;
+    s.prevZ = s.z;
   }
 
   private keepOffLane(s: Swimmer, dt: number): void {
@@ -1288,7 +1321,10 @@ export class OceanLife {
   private swimmerActing(s: Swimmer): boolean {
     if (s.species === 'turtle' && s.state === 'breathe') return true;
     if (s.state === 'charge' || s.state === 'warn' || s.state === 'retreat') return true;
-    if (this.debugLock > 0) return false;
+    // A glide is the manta's whole behavior. It counts as motion even when the
+    // step is small, as long as the cast is not frozen for a debug pose.
+    if (s.species === 'manta' && this.debugLock <= 0) return true;
+    if (this.debugLock > 0 && s.species !== 'clownfish') return false;
     return (s.travel ?? 0) > 0.28;
   }
 
@@ -1351,6 +1387,8 @@ export class OceanLife {
     }
     for (const s of this.swimmers) {
       if (s.species === 'orca' && !this.orcaVisible) continue;
+      if (s.species === 'shark' && !s.mesh.visible) continue;
+      if (s.species === 'shark' && this.calmSpawn() && s.y > -22) continue;
       let moment: MomentId | null = null;
       if (s.species === 'turtle' && s.state === 'breathe') moment = 'turtleBreath';
       if (s.species === 'shark' && s === this.sharkA && scatter) moment = 'baitball';

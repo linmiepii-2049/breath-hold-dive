@@ -194,8 +194,16 @@ button:hover:not(:disabled) { filter: brightness(1.08); }
   letter-spacing: 0.16em;
   text-shadow: 0 0 18px rgba(255, 60, 70, 0.7);
 }
+#ui.danger #vignette {
+  background: radial-gradient(circle at center, rgba(255, 48, 56, 0.2) 0%, rgba(190, 16, 28, 0.34) 42%, rgba(140, 0, 16, 0.78) 100%);
+  animation: danger-pulse 0.8s ease-in-out infinite;
+}
 #ui.charging #vignette {
-  background: radial-gradient(circle at center, transparent 30%, rgba(190, 16, 28, 0.78) 100%);
+  background: radial-gradient(circle at center, rgba(255, 36, 44, 0.26) 0%, rgba(200, 8, 20, 0.46) 36%, rgba(140, 0, 12, 0.86) 100%);
+}
+@keyframes danger-pulse {
+  0%, 100% { opacity: 0.62; }
+  50% { opacity: 1; }
 }
 .warn kbd,
 .pause kbd {
@@ -387,11 +395,13 @@ body.touch .hud-tr {
   right: calc(78px + env(safe-area-inset-right, 0px));
 }
 body.touch .hud-bc {
-  left: calc(12px + env(safe-area-inset-left, 0px));
-  right: auto;
-  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  left: auto;
+  right: calc(148px + env(safe-area-inset-right, 0px));
+  bottom: calc(150px + env(safe-area-inset-bottom, 0px));
   transform: none;
-  width: min(280px, 46vw);
+  width: min(168px, 24vw);
+  padding: 6px 8px;
+  pointer-events: none;
 }
 body.touch .legend,
 body.touch .meter { display: none; }
@@ -435,8 +445,8 @@ body.touch #ui.surfaced.is-paused #touch-end-paused {
   align-items: center;
   justify-content: center;
 }
-body.touch #touch-shutter { visibility: hidden; pointer-events: none; }
-body.touch #ui.aiming #touch-shutter { visibility: visible; pointer-events: auto; }
+body.touch #touch-shutter { visibility: visible; opacity: 0.55; }
+body.touch #touch-shutter.ready { opacity: 1; }
 .rotate-overlay {
   display: none;
   position: absolute;
@@ -534,15 +544,19 @@ body.touch .steer-zone {
   background: linear-gradient(90deg, rgba(142, 224, 214, 0.16), rgba(142, 224, 214, 0));
   animation: steer-fade 6s ease forwards;
 }
+body.touch .vf-tag {
+  top: calc(112px + env(safe-area-inset-top, 0px));
+}
 body.touch .toasts {
-  top: calc(8px + env(safe-area-inset-top, 0px));
-  width: min(260px, calc(100vw - 210px));
+  top: calc(6px + env(safe-area-inset-top, 0px));
+  width: min(210px, 42vw);
+  z-index: 5;
 }
 body.touch .toast { font-size: 13px; line-height: 1.35; }
 body.touch .steer-zone span {
   position: fixed;
   left: 50%;
-  top: calc(44px + env(safe-area-inset-top, 0px));
+  top: calc(36px + env(safe-area-inset-top, 0px));
   transform: translateX(-50%);
   white-space: nowrap;
   color: rgba(231, 255, 248, 0.82);
