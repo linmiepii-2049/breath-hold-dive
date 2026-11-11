@@ -28,6 +28,7 @@ import { OceanLife, type SimEvent } from './creatures';
 import { setLang, t } from './i18n';
 import { animateDiver, diverStroke, makeDiver, shadeDiver, tintDiver } from './models';
 import { scoreFrame, type FrameSubject, type ScoreBreakdown } from './scoring';
+import { lockLandscape, prefersTouch } from './touch';
 import { albumReplaces, defaultSave, loadSave, writeSave, type SaveData } from './save';
 import { clampDiver, depthMeters, terrainHeight } from './terrain';
 import {
@@ -102,6 +103,13 @@ export class Game {
   private keys = new Set<string>();
   private just = new Set<string>();
   private mouseDX = 0;
+  private touchDX = 0;
+  private touchDY = 0;
+  private steerId: number | null = null;
+  private steerX = 0;
+  private steerY = 0;
+  private landscapeTried = false;
+  private readonly touch = prefersTouch();
   private mouseDY = 0;
   private wheel = 0;
   private lmb = false;
@@ -237,8 +245,30 @@ export class Game {
           this.paused = false;
           return;
         }
+        if (this.touch) {
+          this.paused = false;
+          this.needsSteer = false;
+          return;
+        }
         const lock = this.canvas.requestPointerLock();
         void Promise.resolve(lock).catch(() => {});
+      },
+      pause: () => {
+        if (this.mode === 'dive' && !this.wantJudge) this.holdForSteer();
+      },
+      kick: (down) => {
+        if (down) this.keys.add('Space');
+        else this.keys.delete('Space');
+      },
+      sprint: () => {
+        if (this.mode === 'dive' && !this.paused) this.kickQueued = true;
+      },
+      camera: () => this.toggleViewfinder(),
+      shutter: () => {
+        if (this.mode === 'dive' && !this.paused && this.viewfinder) this.lmb = true;
+      },
+      endDive: () => {
+        if (this.mode === 'dive' && this.surfaced()) this.finishDive();
       },
       sens: (value) => {
         this.save.lookSens = clamp(value, 0.45, 2.1);
@@ -314,6 +344,7 @@ export class Game {
     this.emitBubbles(this.feet.x, this.feet.y + 1.2, this.feet.z, 8);
     this.audio.bubbles();
     this.pushToast('toast.descend');
+    if (this.touch) return;
     const lock = this.canvas.requestPointerLock();
     void Promise.resolve(lock).catch(() => {
       if (this.life.framing() || this.mode !== 'dive' || this.wantJudge) return;
@@ -427,6 +458,7 @@ export class Game {
       this.enterJudge();
     }
     if (
+      !this.touch &&
       this.mode === 'dive' &&
       !this.wantJudge &&
       !this.life.framing() &&
@@ -460,6 +492,8 @@ export class Game {
     this.just.clear();
     this.mouseDX = 0;
     this.mouseDY = 0;
+    this.touchDX = 0;
+    this.touchDY = 0;
     this.wheel = 0;
     this.lmb = false;
     this.pad = null;
@@ -642,11 +676,12 @@ export class Game {
 
   /** Mouse up looks up. Mouse right turns right. The clamp is a rate, so 15 FPS turns as far per second as 60. */
   private applyLook(frameDt: number): void {
-    if (!document.pointerLockElement) return;
+    const touchLook = this.touchDX !== 0 || this.touchDY !== 0;
+    if (!document.pointerLockElement && !touchLook) return;
     const sens = this.save.lookSens;
     const frames = Math.max(1, frameDt / (1 / 60));
-    const lookX = clamp(this.mouseDX, -80 * frames, 80 * frames);
-    const lookY = clamp(this.mouseDY, -60 * frames, 60 * frames);
+    const lookX = clamp(this.mouseDX + this.touchDX, -80 * frames, 80 * frames);
+    const lookY = clamp(this.mouseDY + this.touchDY, -60 * frames, 60 * frames);
     this.viewYaw -= lookX * BALANCE.lookYaw * sens;
     this.viewPitch -= lookY * BALANCE.lookPitch * sens;
     this.viewPitch = clamp(this.viewPitch, -BALANCE.pitchLimit, BALANCE.pitchLimit);
@@ -1636,6 +1671,7 @@ export class Game {
       mm: focalMm(this.fov),
       focus,
       paused: this.paused,
+      touch: this.touch,
       lookSens: this.save.lookSens,
       bursting: this.burstT > 0,
       burstLeft: this.burstT,
@@ -1685,6 +1721,7 @@ export class Game {
     this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     this.canvas.addEventListener('mousedown', (e) => {
       this.audio.unlock();
+      if (this.touch) return;
       if (this.mode === 'dive' && !this.wantJudge && (this.paused || this.needsSteer || !document.pointerLockElement)) {
         if (e.button === 2) e.preventDefault();
         const lock = this.canvas.requestPointerLock();
@@ -1732,6 +1769,63 @@ export class Game {
       this.keys.clear();
       if (this.mode === 'dive' && !this.wantJudge) this.holdForSteer();
     });
+    if (this.touch) this.bindTouch();
+  }
+
+  /** Right-half drag. Same sign as the mouse: up looks up, right turns right. */
+  private bindTouch(): void {
+    const steer = (t: Touch): boolean => {
+      const el = document.elementFromPoint(t.clientX, t.clientY);
+      if (el?.closest('button, a, input, label, .rotate-overlay')) return false;
+      return t.clientX >= window.innerWidth * 0.5;
+    };
+    window.addEventListener(
+      'touchstart',
+      (e) => {
+        this.audio.unlock();
+        this.tryLandscape();
+        if (this.mode !== 'dive' || this.wantJudge) return;
+        for (const t of Array.from(e.changedTouches)) {
+          if (this.steerId != null || !steer(t)) continue;
+          this.steerId = t.identifier;
+          this.steerX = t.clientX;
+          this.steerY = t.clientY;
+          if (this.paused) {
+            this.paused = false;
+            this.needsSteer = false;
+          }
+        }
+      },
+      { passive: true },
+    );
+    window.addEventListener(
+      'touchmove',
+      (e) => {
+        if (this.steerId == null) return;
+        for (const t of Array.from(e.changedTouches)) {
+          if (t.identifier !== this.steerId) continue;
+          e.preventDefault();
+          this.touchDX += t.clientX - this.steerX;
+          this.touchDY += t.clientY - this.steerY;
+          this.steerX = t.clientX;
+          this.steerY = t.clientY;
+        }
+      },
+      { passive: false },
+    );
+    const end = (e: TouchEvent) => {
+      for (const t of Array.from(e.changedTouches)) {
+        if (t.identifier === this.steerId) this.steerId = null;
+      }
+    };
+    window.addEventListener('touchend', end);
+    window.addEventListener('touchcancel', end);
+  }
+
+  private tryLandscape(): void {
+    if (this.landscapeTried) return;
+    this.landscapeTried = true;
+    void lockLandscape();
   }
 
   private suppressToggleUntil = 0;
@@ -1747,11 +1841,10 @@ export class Game {
     if (performance.now() < this.suppressToggleUntil) return;
     if (this.mode !== 'dive' || this.paused) return;
     this.viewfinder = !this.viewfinder;
-    if (!document.pointerLockElement) {
-      this.relockUntil = performance.now() + 500;
-      const lock = this.canvas.requestPointerLock();
-      void Promise.resolve(lock).catch(() => this.holdForSteer());
-    }
+    if (this.touch || document.pointerLockElement) return;
+    this.relockUntil = performance.now() + 500;
+    const lock = this.canvas.requestPointerLock();
+    void Promise.resolve(lock).catch(() => this.holdForSteer());
   }
 
   private onEscape(): void {

@@ -5,6 +5,7 @@ import type { BreathState, ApneaState, BreathPhase } from './training';
 import { BREATH_WINDOW_END, BREATH_WINDOW_START, breathInto, breathPhase } from './training';
 import type { AlbumEntry, GearId, Lang } from './types';
 import { MOMENTS, SPECIES } from './types';
+import { portraitNow, prefersTouch } from './touch';
 
 export interface UIHooks {
   dive(): void;
@@ -22,6 +23,12 @@ export interface UIHooks {
   hold(down: boolean): void;
   buy(id: GearId): void;
   resume(): void;
+  pause(): void;
+  kick(down: boolean): void;
+  sprint(): void;
+  camera(): void;
+  shutter(): void;
+  endDive(): void;
   sens(value: number): void;
   submit(): void;
   nextCard(): void;
@@ -62,6 +69,8 @@ export interface UIModel {
   mm: number;
   focus: string;
   paused: boolean;
+  /** Phone or tablet layout. Desktop stays false. */
+  touch: boolean;
   lookSens: number;
   bursting: boolean;
   burstLeft: number;
@@ -87,11 +96,18 @@ export interface UIModel {
 
 export class GameUI {
   private key = '';
+  private touch = prefersTouch();
 
   constructor(
     private root: HTMLElement,
     private hooks: UIHooks,
-  ) {}
+  ) {
+    document.body.classList.toggle('touch', this.touch);
+    if (this.touch) {
+      window.addEventListener('resize', () => this.syncRotate());
+      window.addEventListener('orientationchange', () => this.syncRotate());
+    }
+  }
 
   sync(m: UIModel): void {
     const key = `${m.mode}:${m.nonce}:${m.lang}`;
@@ -102,6 +118,7 @@ export class GameUI {
     }
     if (m.mode === 'dive' || m.mode === 'breath' || m.mode === 'apnea') this.patch(m);
     this.patchFps(m);
+    this.syncRotate();
   }
 
   private patchFps(m: UIModel): void {
@@ -141,6 +158,13 @@ export class GameUI {
     q('#go-apnea')?.addEventListener('click', () => this.hooks.startApnea());
     q('#train-done')?.addEventListener('click', () => this.hooks.finishTrain());
     q('#resume')?.addEventListener('click', () => this.hooks.resume());
+    this.press(q('#touch-pause'), () => this.hooks.pause());
+    this.press(q('#touch-sprint'), () => this.hooks.sprint());
+    this.press(q('#touch-cam'), () => this.hooks.camera());
+    this.press(q('#touch-shutter'), () => this.hooks.shutter());
+    this.press(q('#touch-end'), () => this.hooks.endDive());
+    this.press(q('#touch-end-paused'), () => this.hooks.endDive());
+    this.holdButton(q('#touch-kick'), (down) => this.hooks.kick(down));
     q('#sens')?.addEventListener('input', (ev) => {
       const value = Number((ev.target as HTMLInputElement).value);
       this.hooks.sens(value);
@@ -160,19 +184,53 @@ export class GameUI {
         this.hooks.pad(phase);
       });
     }
-    const hold = q('#hold');
-    hold?.addEventListener('pointerdown', (ev) => {
-      ev.preventDefault();
-      this.hooks.hold(true);
-    });
-    hold?.addEventListener('pointerup', () => this.hooks.hold(false));
-    hold?.addEventListener('pointerleave', () => this.hooks.hold(false));
+    this.holdButton(q('#hold'), (down) => this.hooks.hold(down));
     this.root.querySelectorAll<HTMLElement>('[data-debug]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const id = btn.dataset.debug;
         if (id) this.hooks.debug(id);
       });
     });
+  }
+
+  /** A tap that fires once on press, so a shutter or a sprint does not wait for release. */
+  private press(el: Element | null, fire: () => void): void {
+    if (!el) return;
+    el.addEventListener('pointerdown', (ev) => {
+      ev.preventDefault();
+      fire();
+    });
+  }
+
+  /** Hold stays down until the finger lifts, including if it slides off the button. */
+  private holdButton(el: Element | null, down: (held: boolean) => void): void {
+    if (!el) return;
+    const node = el as HTMLElement;
+    node.addEventListener('pointerdown', (ev) => {
+      ev.preventDefault();
+      try {
+        node.setPointerCapture(ev.pointerId);
+      } catch {
+        /* a synthetic touch with no pointer id still holds until pointerup */
+      }
+      down(true);
+    });
+    const up = () => down(false);
+    node.addEventListener('pointerup', up);
+    node.addEventListener('pointercancel', up);
+  }
+
+  private syncRotate(): void {
+    if (!this.touch) return;
+    let el = this.root.querySelector('#rotate') as HTMLElement | null;
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'rotate';
+      el.className = 'rotate-overlay';
+      el.innerHTML = `<p>${t('touch.rotate')}</p>`;
+      this.root.appendChild(el);
+    }
+    el.classList.toggle('on', portraitNow());
   }
 
   private shore(m: UIModel): string {
@@ -395,7 +453,21 @@ export class GameUI {
           <h2>${t('hud.pause')}</h2>
           <p class="dim" id="pause-hint"></p>
           <button type="button" class="primary" id="resume">${t('btn.resume')}</button>
+          ${m.touch ? `<button type="button" id="touch-end-paused">${t('touch.end')}</button>` : ''}
         </div>
+      </div>
+      ${this.touchPad(m)}`;
+  }
+
+  private touchPad(m: UIModel): string {
+    if (!m.touch) return '';
+    return `<button type="button" class="touch-pause" id="touch-pause">${t('touch.pause')}</button>
+      <div class="touch-pad">
+        <button type="button" id="touch-end">${t('touch.end')}</button>
+        <button type="button" id="touch-kick">${t('touch.kick')}</button>
+        <button type="button" id="touch-sprint">${t('touch.sprint')}</button>
+        <button type="button" id="touch-cam">${t('touch.camera')}</button>
+        <button type="button" id="touch-shutter">${t('touch.shutter')}</button>
       </div>`;
   }
 
@@ -587,6 +659,9 @@ export class GameUI {
       else if (cooling) burst.textContent = `${t('hud.cooldown')} ${m.burstCd.toFixed(1)}`;
     }
     this.root.querySelector('#pause')?.classList.toggle('on', m.paused);
+    this.root.classList.toggle('is-paused', m.paused);
+    this.root.classList.toggle('surfaced', m.atSurface);
+    this.root.classList.toggle('aiming', m.viewfinder);
     const pauseHint = this.root.querySelector('#pause-hint');
     if (pauseHint) pauseHint.innerHTML = m.atSurface ? t('hud.pauseHint') : t('hud.pauseSteer');
     this.root.classList.toggle('charging', m.sharkCharging && !m.atSurface);
