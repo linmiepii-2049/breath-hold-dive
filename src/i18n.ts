@@ -211,6 +211,13 @@ const STR: Record<string, { zh: string; en: string }> = {
   'cmt.school': { zh: '鱼群的银光很有气势。', en: 'The school’s silver mass has real presence.' },
 
   'desktop': { zh: '这个版本先为桌面键鼠设计。', en: 'This version is built for a desktop keyboard and mouse.' },
+  'touch.rotate': { zh: '请把设备转成横屏', en: 'Rotate your device' },
+  'touch.kick': { zh: '踢水', en: 'Kick' },
+  'touch.sprint': { zh: '冲刺', en: 'Sprint' },
+  'touch.camera': { zh: '相机', en: 'Camera' },
+  'touch.shutter': { zh: '快门', en: 'Shutter' },
+  'touch.end': { zh: '结束下潜', en: 'End dive' },
+  'touch.pause': { zh: '暂停', en: 'Pause' },
 };
 
 let lang: Lang = 'zh';
