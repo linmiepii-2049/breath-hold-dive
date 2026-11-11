@@ -89,14 +89,15 @@ export const BALANCE = {
   /** Fraction of non-best photos added to the payout. */
   otherPhotoPay: 0.25,
   /**
-   * Elevated rear three-quarter. ~45° up (lift ≈ back), a small side offset,
-   * and the look target above the diver so the body sits in the lower third.
+   * Elevated rear three-quarter at every depth. Elevation is
+   * atan(lift / hypot(back, side)) = 45°. The side offset is about 30°
+   * off a pure tail view. The aim point sits on the torso.
    */
-  followBack: 4.6,
-  followSide: 3.1,
-  followLift: 4.4,
-  followAim: 1.65,
-  /** HUD surface band. The feet rest near 0.98 m; the end button hides past this. */
+  followBack: 3.0,
+  followSide: 1.7,
+  followLift: 3.45,
+  followAim: 0.65,
+  /** HUD surface band. The feet rest near 0.98 m; the surface prompt hides past this. */
   surfaceUi: 1.05,
   shotCooldown: 0.45,
   grace: 3.5,
