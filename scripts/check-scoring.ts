@@ -204,13 +204,36 @@ const farStill = scoreFrame({
 });
 assert(farStill.moment === 0, `a distant still clownfish has no motion line (${farStill.moment})`);
 
-const shellCover = scoreFrame({
+const openWater = scoreFrame({
   subjects: [
     subject({
       species: 'turtle',
       rarity: 16,
       acting: false,
       ndcX: -0.46,
+      ndcY: 0.04,
+      radiusNdcX: 0.52,
+      radiusNdcY: 0.38,
+      fill: 0.48,
+      distance: 4,
+      optimal: 7,
+    }),
+  ],
+  depth: 8,
+  nearestPredator: 40,
+});
+assert(
+  openWater.species === null,
+  `open water beside the shell does not lock (${openWater.species})`,
+);
+
+const shellCover = scoreFrame({
+  subjects: [
+    subject({
+      species: 'turtle',
+      rarity: 16,
+      acting: false,
+      ndcX: -0.2,
       ndcY: 0.04,
       radiusNdcX: 0.52,
       radiusNdcY: 0.38,

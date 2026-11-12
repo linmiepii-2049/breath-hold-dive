@@ -137,6 +137,7 @@ export function createWorld(): World {
   scene.add(reef);
   scene.add(wall);
   scene.add(laneRocks);
+  scene.add(buildFloorCoral());
   scene.add(buildBeach());
   const guideFades: Mesh[] = [];
   scene.add(buildTrenchGuide(guideFades));
@@ -174,9 +175,10 @@ export function createWorld(): World {
       const diveT = Math.min(1, diverDepth / 42);
       const under = Math.min(1, Math.max(0, (0.4 - camY) / 4));
       const waterMix = Math.max(under, diveT * 0.85);
-      // Distance falls toward deep blue. Density stays low inside ~12 m so a rock and the beads stay readable.
-      fog.color.copy(air).lerp(shallow, Math.min(1, waterMix * 1.05)).lerp(deep, 0.18 + diveT * 0.55);
-      const haze = 0.0014 + waterMix * 0.0011 + diveT * 0.0036;
+      // Distance falls toward deep blue. Near the floor the haze stays lighter so a rock
+      // within about 8 m and the beads on the lane still read.
+      fog.color.copy(air).lerp(shallow, Math.min(1, waterMix * 1.05)).lerp(deep, 0.1 + diveT * 0.28);
+      const haze = 0.0012 + waterMix * 0.0008 + diveT * 0.0018;
       fog.density = detail ? haze : haze * 0.72;
       hemi.intensity = 1.4 - diveT * 0.12;
       sun.intensity = 1.6 - diveT * 0.18;
@@ -209,8 +211,8 @@ export function createWorld(): World {
         );
         const dCam = distToSeg(camX, camY, camZ, seg);
         const bodyT = Math.max(0, Math.min(1, (d - 2.2) / 0.9));
-        // A bead in the follow lens becomes a screen-filling disc. Hide that, keep the ones ahead.
-        const camT = Math.max(0, Math.min(1, (dCam - 4.4) / 1.2));
+        // Only a bead that fills the lens hides. Ones a few metres ahead stay in the descent view.
+        const camT = Math.max(0, Math.min(1, (dCam - 2.2) / 0.7));
         const screenT = view && screenCoversDiver(view, diverX, diverY, diverZ, seg) ? 0 : 1;
         const columnT = columnNearBody(diverX, diverY, diverZ, seg) ? 0 : 1;
         // The viewfinder is the photo. Keep the swim guide out of the frame and out of the print.
@@ -270,10 +272,14 @@ function screenCoversDiver(cam: PerspectiveCamera, diverX: number, diverY: numbe
     if (fx * screenFwd.x + fy * screenFwd.y + fz * screenFwd.z < 0.15) continue;
     screenA.set(x, y, z).project(cam);
     const segDist = Math.max(0.5, Math.hypot(fx, fy, fz));
+    // A bead further down the lane can line up with the diver on screen and still be
+    // metres ahead. Only hide a sample that is actually on the suit.
+    const world = Math.hypot(x - diverX, y - diverY, z - diverZ);
+    if (world > 3.4) continue;
     for (let b = 0; b < screenBody.length; b++) {
       const ox = (screenA.x - screenBody[b].x) * cam.aspect;
       const oy = screenA.y - screenBody[b].y;
-      if (Math.hypot(ox, oy) * segDist * tanHalf < 2.2) return true;
+      if (Math.hypot(ox, oy) * segDist * tanHalf < 1.25) return true;
     }
   }
   return false;
@@ -337,11 +343,11 @@ function beadX(z: number): number {
 /** Glide height: in the water the diver actually swims, never under the floor. */
 function beadHeight(x: number, z: number): number {
   const floor = terrainHeight(x, z);
-  const glide = -3.2 - Math.max(0, z - 11) * 0.72;
-  // The follow camera looks down at 45°, so a head-high line leaves the frame.
-  // On the trench floor the beads sit on the sand, where that camera still sees several ahead.
-  if (glide < floor + 1.2) return floor + 0.5;
-  return Math.max(floor + 1.8, glide);
+  // Steeper than the old glide, so a pitched-down diver still has the next beads
+  // ahead and below, not floating above the follow frame.
+  const glide = -4.0 - Math.max(0, z - 11) * 0.9;
+  if (glide < floor + 1.35) return floor + 1.05;
+  return Math.max(floor + 1.7, glide);
 }
 
 function guideBead(g: Group, fades: Mesh[], x: number, z: number, color: number, radius: number, y: number): Vector3 {
@@ -468,7 +474,7 @@ function buildFloor(): Mesh {
         vec3 base = mix(rock, sand, smoothstep(0.58, 0.92, flatN));
         float deepT = clamp((-vWorld.y - 8.0) / 36.0, 0.0, 1.0);
         deepT = deepT * deepT * (3.0 - 2.0 * deepT);
-        base = mix(base, vec3(0.42, 0.62, 0.64), deepT * 0.16);
+        base = mix(base, vec3(0.58, 0.74, 0.72), deepT * 0.22);
         float n1 = sin(vWorld.x * 0.45 + uTime * 0.85) * sin(vWorld.z * 0.38 - uTime * 0.65);
         float n2 = sin(vWorld.x * 0.2 - uTime * 0.4 + vWorld.z * 0.17);
         float ca = smoothstep(0.4, 1.3, n1 + n2);
@@ -478,14 +484,14 @@ function buildFloor(): Mesh {
         float lam = clamp(dot(normalize(vNormalW), sunDir), 0.0, 1.0);
         float rim = pow(1.0 - clamp(dot(normalize(vNormalW), sunDir), 0.0, 1.0), 1.4);
         vec3 col = base * (0.72 + 0.55 * lam) + vec3(0.62, 0.84, 0.76) * ca * 1.2;
-        col += vec3(0.18, 0.28, 0.26) * rim * (1.0 - deepT * 0.35);
-        col *= mix(1.0, 0.97, deepT);
+        col += vec3(0.22, 0.34, 0.32) * rim * (1.0 - deepT * 0.12);
+        col *= mix(1.0, 1.02, deepT);
         float nearD = distance(vWorld, uNear);
-        float nearK = 1.0 - smoothstep(1.5, 12.0, nearD);
-        // Far trench sand recedes. The patch within ~12 m of the diver stays a readable tan.
+        float nearK = 1.0 - smoothstep(1.5, 14.0, nearD);
+        // The sand within about 14 m of the diver stays a light tan at the floor.
         float grain = sin(vWorld.x * 1.6 + vWorld.z * 0.4) * sin(vWorld.z * 1.35);
-        vec3 deepSand = vec3(0.30, 0.52, 0.56) * (0.92 + 0.34 * lam) + vec3(0.02, 0.03, 0.03) * grain;
-        col = mix(col, mix(col * 0.62, deepSand, nearK), deepT);
+        vec3 deepSand = vec3(0.58, 0.74, 0.68) * (1.05 + 0.32 * lam) + vec3(0.03, 0.04, 0.03) * grain;
+        col = mix(col, mix(col * 0.88, deepSand, nearK), deepT * 0.72);
         gl_FragColor = vec4(col, 1.0);
         #include <fog_fragment>
       }
@@ -625,28 +631,57 @@ function buildReef(solids: Solid[]): Mesh {
 /** Stones just off the default heading, at the 34 m and 41 m water, so a straight descent has a rock in view. */
 function buildLaneRocks(solids: Solid[]): Mesh {
   const parts: { geo: BufferGeometry; matrix: Matrix4; color: Color }[] = [];
-  const color = new Color(0xc5dde3);
-  for (const z of [48, 56, 66, 74]) {
-    const x = beadX(z) + 4.4;
+  const color = new Color(0xd5eef2);
+  const place = (x: number, z: number, s: number, rx: number, ry: number, rz: number) => {
     const floor = terrainHeight(x, z);
-    const s = 1.45;
     const py = floor + s * 0.42;
     parts.push({
       geo: UNIT.ico,
-      matrix: M(x, py, z, 0.35, 1.1, 0.25, s, s * 0.8, s * 1.05),
+      matrix: M(x, py, z, rx, ry, rz, s, s * 0.8, s * 1.05),
       color,
     });
-    pushRock(solids, x, py, z, 0.35, 1.1, 0.25, s, s * 0.8, s * 1.05);
-  }
+    pushRock(solids, x, py, z, rx, ry, rz, s, s * 0.8, s * 1.05);
+  };
+  for (const z of [48, 56, 66, 74]) place(beadX(z) + 4.4, z, 1.45, 0.35, 1.1, 0.25);
+  // Closer to the swim line on the 41 m floor, so a downward look has a rock within ~8 m.
+  const heading = (z: number) => 6.2 + Math.max(0, z - 9) * Math.tan(0.15);
+  place(heading(58) - 2.6, 58, 1.2, 0.4, 0.6, 0.2);
+  place(heading(64) + 3.4, 64, 1.35, 0.2, 1.4, 0.35);
+  place(heading(70) - 2.2, 70, 1.25, 0.5, 0.8, 0.15);
+  place(heading(76) + 3.1, 76, 1.15, 0.25, 1.8, 0.3);
   return new Mesh(
     mergeParts(parts),
     new MeshLambertMaterial({
       vertexColors: true,
       flatShading: true,
-      emissive: 0x2c6670,
-      emissiveIntensity: 1.15,
+      emissive: 0x3a8490,
+      emissiveIntensity: 1.55,
     }),
   );
+}
+
+/** A few low-poly coral heads on the 41 m lane, so the floor is not only sand and one dark stone. */
+function buildFloorCoral(): Group {
+  const g = new Group();
+  const teal = new MeshLambertMaterial({ color: 0x3ed0be, emissive: 0x146860, emissiveIntensity: 0.95, flatShading: true });
+  const rose = new MeshLambertMaterial({ color: 0xe8889c, emissive: 0x8a3850, emissiveIntensity: 0.75, flatShading: true });
+  const spots = [
+    { z: 61, side: -1.4, h: 0.85, mat: rose },
+    { z: 67, side: 2.2, h: 1.05, mat: teal },
+    { z: 73, side: -1.8, h: 0.75, mat: teal },
+  ];
+  for (const s of spots) {
+    const x = 6.2 + Math.max(0, s.z - 9) * Math.tan(0.15) + s.side;
+    const floor = terrainHeight(x, s.z);
+    const a = new Mesh(UNIT.cone, s.mat);
+    a.scale.set(0.32, s.h, 0.32);
+    a.position.set(x, floor + s.h * 0.45, s.z);
+    const b = new Mesh(UNIT.cone, s.mat === teal ? rose : teal);
+    b.scale.set(0.2, s.h * 0.65, 0.2);
+    b.position.set(x + 0.38, floor + s.h * 0.28, s.z + 0.22);
+    g.add(a, b);
+  }
+  return g;
 }
 
 function buildWall(solids: Solid[]): Mesh {

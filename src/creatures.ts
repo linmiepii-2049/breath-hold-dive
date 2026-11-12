@@ -1323,19 +1323,20 @@ export class OceanLife {
       this.octoY += (floor + 1.35 - this.octoY) * blend;
       this.octoZ += (showZ - this.octoZ) * blend;
     }
-    const color = this.displaying ? OCTO_SHOW[Math.floor(this.t / 0.85) % OCTO_SHOW.length] : 0x5a463c;
+    // Rest is a dusty coral, not the brown of a stone, with the arms held out so the silhouette reads at range.
+    const color = this.displaying ? OCTO_SHOW[Math.floor(this.t / 0.85) % OCTO_SHOW.length] : 0xc46a58;
     this.octopus.userData.displayColor = color;
     const bodyMat = this.octopus.userData.bodyMat as MeshLambertMaterial | undefined;
     if (bodyMat) {
-      bodyMat.emissive.setHex(this.displaying ? color : 0x000000);
-      bodyMat.emissiveIntensity = this.displaying ? 0.85 : 0;
+      bodyMat.emissive.setHex(this.displaying ? color : 0x7a3830);
+      bodyMat.emissiveIntensity = this.displaying ? 0.85 : 0.5;
     }
     // A resting octopus does not wave its arms or yaw. The colour show is the animation.
     animateTail(this.octopus, this.displaying ? this.t : 0, this.displaying ? 1.4 : 0, 0);
     if (!this.displaying) {
       const legs = this.octopus.userData.legs as Group[] | undefined;
-      legs?.forEach((leg) => {
-        leg.rotation.x = 0.12;
+      legs?.forEach((leg, i) => {
+        leg.rotation.x = 0.85 + (i % 2) * 0.15;
       });
     }
     this.octopus.position.set(this.octoX, this.octoY, this.octoZ);
