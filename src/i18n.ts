@@ -253,7 +253,7 @@ const STR: Record<string, { zh: string; en: string }> = {
   'touch.sprint': { zh: '冲刺', en: 'Sprint' },
   'touch.camera': { zh: '相机', en: 'Camera' },
   'touch.shutter': { zh: '快门', en: 'Shutter' },
-  'touch.shutterWait': { zh: '先开相机', en: 'Open cam' },
+  'touch.shutterWait': { zh: '开相机', en: 'Aim' },
   'touch.end': { zh: '结束下潜', en: 'End dive' },
   'touch.pause': { zh: '暂停', en: 'Pause' },
   'touch.steerHint': { zh: '左半边滑动转向', en: 'Drag the left half to look' },

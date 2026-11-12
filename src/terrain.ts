@@ -44,6 +44,12 @@ export function terrainHeight(x: number, z: number): number {
   // 41 m on the depth gauge is the floor everywhere. A diver resting on the
   // sand has feet about 1.12 m above this height, and depthMeters of that pose is 41.
   if (y < -42.12) y = -42.12;
+  // Shave only the last dune shoulder. A rest there used to read 40.4–40.6 m.
+  // The approach above that stays as it was, so the descent still reaches the floor.
+  if (y < -41.05) {
+    const t = smoothstep(-41.05, -41.45, y);
+    y = y * (1 - t) + -42.12 * t;
+  }
   return y;
 }
 

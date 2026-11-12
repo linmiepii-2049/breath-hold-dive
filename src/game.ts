@@ -929,7 +929,15 @@ export class Game {
       }
     }
     const depth = depthMeters(this.feet.y);
-    this.velY += buoyancyAccel(depth) * dt;
+    // Framing holds the column. Buoyancy would otherwise float a shallow shot
+    // back to the surface at about 0.8 m/s. Kicks still move the diver.
+    if (!this.viewfinder || this.forcedT > 0 || this.lockSurface) {
+      this.velY += buoyancyAccel(depth) * dt;
+    } else if (!space && !bursting) {
+      this.velY *= Math.exp(-8 * dt);
+      if (this.velY > 0.1) this.velY = 0.1;
+      if (this.velY < -0.1) this.velY = -0.1;
+    }
     if (this.forcedT > 0 || this.lockSurface) this.velY = Math.max(this.velY, 3.3);
     const drag = Math.exp(-BALANCE.waterDrag * dt);
     this.velX *= drag;
@@ -1313,25 +1321,29 @@ export class Game {
     const rx = -Math.cos(this.camYaw);
     const rz = Math.sin(this.camYaw);
     const aimY = this.feet.y + BALANCE.followAim;
-    // On the floor a 45° camera puts the lane on the top edge. Drop the camera and
-    // look along the path so the beads ahead stay in the frame.
-    const onFloor = this.feet.y < terrainHeight(this.feet.x, this.feet.z) + 1.7;
-    const along = onFloor ? Math.min(1, Math.max(0, -this.viewPitch - 0.25) / 0.4) : 0;
-    const lift = BALANCE.followLift * (1 - along * 0.5);
+    // Elevation stays atan(lift / hypot(back, side)) = 45°. A steep pitch used to
+    // halve the lift, which dropped the camera to ~29° (and ~20° once the floor
+    // got in the way). Terrain clearance pulls in along this same ray.
+    // On a steep dive the shoulder offset lines the camera up with the bead
+    // column, so the path draws through the suit and the screen cull hides it.
+    // Swing the camera behind the diver, still on the 45° circle.
+    const steep = Math.min(1, Math.max(0, -this.viewPitch - 0.7) / 0.45);
+    const radius = Math.hypot(back, side);
+    const sideNow = side * (1 - steep * 0.82);
+    const backNow = Math.sqrt(Math.max(0.25, radius * radius - sideNow * sideNow));
+    const lift = BALANCE.followLift;
     const place = (s: number) => ({
-      x: this.feet.x - fx * back * s + rx * side * s,
+      x: this.feet.x - fx * backNow * s + rx * sideNow * s,
       y: aimY + lift * s,
-      z: this.feet.z - fz * back * s + rz * side * s,
+      z: this.feet.z - fz * backNow * s + rz * sideNow * s,
     });
-    // Pull closer along the same 45° ray when the rear spot is inside the terrain.
-    // Setting y to the floor flattened the camera from ~45° down toward 26°.
     let scale = 1;
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 16; i++) {
       const tryAt = place(scale);
       if (tryAt.y >= terrainHeight(tryAt.x, tryAt.z) + 0.85) break;
-      scale *= 0.62;
+      scale *= 0.72;
     }
-    scale = Math.max(0.34, scale);
+    scale = Math.max(0.18, scale);
     const parked = place(scale);
     const desiredX = parked.x;
     const desiredY = parked.y;
@@ -1350,8 +1362,10 @@ export class Game {
       this.camPos.z,
     );
     this.cam.up.set(0, 1, 0);
-    const lead = 0.55 + along * 2.4;
-    this.cam.lookAt(this.feet.x + fx * lead, aimY - along * 0.2, this.feet.z + fz * lead);
+    // Aim ahead and down the lane. The camera stays on the 45° ray.
+    const lead = 0.55 + steep * 8;
+    const drop = steep * 4.2;
+    this.cam.lookAt(this.feet.x + fx * lead, aimY - drop, this.feet.z + fz * lead);
   }
 
   private syncView(): void {
