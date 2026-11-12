@@ -310,6 +310,8 @@ button:hover:not(:disabled) { filter: brightness(1.08); }
 .card h2 { margin: 4px 0 2px; font-size: 22px; }
 .card .who { margin: 0 0 10px; font-weight: 650; }
 .card img { width: 100%; aspect-ratio: 16/9; object-fit: cover; background: #d5ddd8; }
+.shot-row { display: block; }
+.score-block { display: block; }
 .score-row { display: grid; grid-template-columns: 108px 1fr 48px; gap: 8px; align-items: center; margin: 7px 0; font-size: 13px; }
 .track { height: 6px; background: rgba(27, 36, 48, 0.1); border-radius: 99px; }
 .track > span { display: block; height: 100%; background: #1a7c8a; border-radius: 99px; }
@@ -580,7 +582,19 @@ body.touch .btn-name { margin-left: 6px; font-size: 13px; }
   }
   .card h2 { font-size: 16px; margin: 2px 0; }
   .card .who { margin: 0 0 2px; }
-  .card img { height: 28px; max-height: 28px; width: 100%; aspect-ratio: auto; object-fit: cover; }
+  .shot-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+    gap: 6px 10px;
+    align-items: center;
+  }
+  .card img {
+    width: 100%;
+    height: auto;
+    max-height: none;
+    aspect-ratio: 16 / 9;
+    object-fit: cover;
+  }
   .score-row { margin: 1px 0; }
   .total-line { margin-top: 2px; }
   .total-line b { font-size: 22px; line-height: 1; }
@@ -596,7 +610,41 @@ body.touch .btn-name { margin-left: 6px; font-size: 13px; }
     overflow: hidden;
   }
   body.touch .card-body { flex: 0 0 auto; overflow: visible; min-height: auto; }
-  body.touch .card img { height: 28px; max-height: 28px; aspect-ratio: auto; }
+  body.touch .card img { height: auto; max-height: none; aspect-ratio: 16 / 9; }
+  body.touch .modal .panel:has(.shop-grid) {
+    height: calc(100dvh - 16px);
+    max-height: calc(100dvh - 16px);
+  }
+  body.touch .modal .panel:has(.shop-grid) .actions {
+    margin-top: 4px;
+    padding-top: 4px;
+  }
+  body.touch .shop-grid {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding-bottom: 0;
+    gap: 6px;
+    align-items: stretch;
+    justify-items: stretch;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  body.touch .shop-grid .item.panel {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    margin: 0;
+    padding: 3px 8px 3px;
+  }
+  body.touch .shop-grid .item p { margin: 0; font-size: 12px; line-height: 1.25; }
+  body.touch .shop-grid .item h3 { margin: 0; font-size: 14px; line-height: 1.2; }
+  body.touch .shop-grid .pips { margin: 1px 0; }
+  body.touch .shop-grid .item button { min-height: 24px; padding: 1px 6px; margin-top: 2px; }
+  body.touch .hud-bc .warn {
+    white-space: normal;
+    overflow: visible;
+    line-height: 1.25;
+  }
   body.touch .score-row { margin: 1px 0; }
   body.touch .comment { margin: 2px 0; font-size: 12px; }
   body.touch .modal .card .actions { margin-top: 4px; padding-top: 4px; }

@@ -1358,28 +1358,83 @@ export class Game {
     // Elevation stays atan(lift / hypot(back, side)) = 45°. A steep pitch used to
     // halve the lift, which dropped the camera to ~29° (and ~20° once the floor
     // got in the way). Terrain clearance pulls in along this same ray.
-    // Come around to the side on a steep dive. From directly behind, the fins
-    // hide the suit. The radius and the lift still scale together, so the
-    // elevation stays 45°.
+    // A three-quarter view. Purely beside the diver, the lane leaves the frame
+    // and the deep sand fills it. Purely behind, the fins hide the suit.
+    // Radius and lift still scale together, so the elevation stays 45°.
     const steep = Math.min(1, Math.max(0, -this.viewPitch - 0.7) / 0.45);
-    const pull = 1 - steep * 0.06;
-    const radius = Math.hypot(back, side) * pull;
-    const sideNow = Math.min(radius * 0.92, side * pull * (1 + steep * 0.9));
-    const backNow = Math.sqrt(Math.max(0.35, radius * radius - sideNow * sideNow));
-    const lift = BALANCE.followLift * pull;
-    const place = (s: number) => ({
-      x: this.feet.x - fx * backNow * s + rx * sideNow * s,
-      y: aimY + lift * s,
-      z: this.feet.z - fz * backNow * s + rz * sideNow * s,
-    });
-    let scale = 1;
-    for (let i = 0; i < 16; i++) {
-      const tryAt = place(scale);
-      if (tryAt.y >= terrainHeight(tryAt.x, tryAt.z) + 0.85) break;
-      scale *= 0.72;
+    const pull = 1 - steep * 0.04;
+    // Look a few metres down the lane, just under the chest. Far enough that
+    // the next beads and a nearby rock stay in frame, near enough that the
+    // suit and fins stay in the lower middle.
+    let lead = 2.2 + steep * 0.35;
+    // On a slope the gaze sits below the chest so the suit clears the oxygen
+    // panel. On the flat floor that point is under the sand, so the gaze
+    // comes up to the path and then a little under it: high enough that the
+    // beads stay in frame, low enough that the head clears the oxygen panel.
+    let lookY = aimY - 0.1 - steep * 1.05;
+    const pathY = terrainHeight(this.feet.x + fx * lead, this.feet.z + fz * lead) + 0.78;
+    let floorFit = 1;
+    if (lookY < pathY) {
+      // Level already fits. A steep diver is nearly vertical: the gaze drops
+      // just under the path so the head clears the oxygen panel, and the
+      // camera stays back instead of pulling into the slope.
+      lookY = pathY - steep * 0.42;
+      lead = Math.max(1.45, lead - 0.35);
+      floorFit = 1 + steep * 0.55;
     }
-    scale = Math.max(0.62, scale);
-    const parked = place(scale);
+    // Lift scales with the radius, so elevation stays 45°.
+    const zoom = 1.18 * floorFit;
+    const radius = Math.hypot(back, side) * pull * zoom;
+    const sideNow = Math.min(radius * (0.48 + steep * 0.16), side * pull * zoom * (1 + steep * 0.55));
+    const backNow = Math.sqrt(Math.max(1.2, radius * radius - sideNow * sideNow));
+    const lift = BALANCE.followLift * pull * zoom;
+    let sideUse = sideNow;
+    let backUse = backNow;
+    let liftUse = lift;
+    if (floorFit > 1) {
+      // The flat floor has a rising slope behind the diver. Pulling the whole
+      // rig in hides the lane. Slide off the shelf first, then raise the
+      // camera (still under 49°) before giving up distance.
+      const baseTan = lift / Math.max(0.01, Math.hypot(backNow, sideNow));
+      const maxTan = Math.tan((49 * Math.PI) / 180);
+      let tan = baseTan;
+      const blocked = () => {
+        const horiz = Math.hypot(backUse, sideUse);
+        liftUse = horiz * tan;
+        const x = this.feet.x - fx * backUse + rx * sideUse;
+        const z = this.feet.z - fz * backUse + rz * sideUse;
+        return aimY + liftUse < terrainHeight(x, z) + 0.85;
+      };
+      for (let i = 0; i < 24 && blocked(); i++) {
+        if (sideUse > 1.15) sideUse *= 0.82;
+        else if (tan < maxTan - 1e-4) tan = Math.min(maxTan, tan + 0.035);
+        else {
+          backUse *= 0.9;
+          sideUse *= 0.9;
+        }
+      }
+    } else {
+      const place = (s: number) => ({
+        x: this.feet.x - fx * backUse * s + rx * sideUse * s,
+        y: aimY + liftUse * s,
+        z: this.feet.z - fz * backUse * s + rz * sideUse * s,
+      });
+      let scale = 1;
+      for (let i = 0; i < 16; i++) {
+        const tryAt = place(scale);
+        if (tryAt.y >= terrainHeight(tryAt.x, tryAt.z) + 0.85) break;
+        scale *= 0.72;
+      }
+      scale = Math.max(0.74, scale);
+      sideUse *= scale;
+      backUse *= scale;
+      liftUse *= scale;
+    }
+    const parked = {
+      x: this.feet.x - fx * backUse + rx * sideUse,
+      y: aimY + liftUse,
+      z: this.feet.z - fz * backUse + rz * sideUse,
+    };
     const desiredX = parked.x;
     const desiredY = parked.y;
     const desiredZ = parked.z;
@@ -1397,11 +1452,7 @@ export class Game {
       this.camPos.z,
     );
     this.cam.up.set(0, 1, 0);
-    // Look at the torso, with a short lead down the lane. The head is the
-    // downhill end, so a steep dive looks a little below the chest. That keeps
-    // the mask above the oxygen panel when the trench pulls the camera in.
-    const lead = 0.28 + steep * 0.22;
-    this.cam.lookAt(this.feet.x + fx * lead, aimY - 0.15 - steep * 0.62, this.feet.z + fz * lead);
+    this.cam.lookAt(this.feet.x + fx * lead, lookY, this.feet.z + fz * lead);
   }
 
   private syncView(): void {
