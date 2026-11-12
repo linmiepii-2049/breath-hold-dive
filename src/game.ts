@@ -1127,6 +1127,40 @@ export class Game {
         nz = gz;
       }
     }
+    // The trench floor is flat at -42.12. A steep pose meets it with the head,
+    // and lifting the whole body left the feet near -41.2 (the gauge read 40.3).
+    // Keep the feet on that sand. The approach above the floor still uses the slope push.
+    const floor = terrainHeight(this.feet.x, this.feet.z);
+    const sand = floor + 0.22;
+    const slope = Math.max(
+      Math.abs(terrainHeight(this.feet.x - 0.6, this.feet.z) - terrainHeight(this.feet.x + 0.6, this.feet.z)),
+      Math.abs(terrainHeight(this.feet.x, this.feet.z - 0.6) - terrainHeight(this.feet.x, this.feet.z + 0.6)),
+    );
+    if (slope < 0.8 && floor <= -42) {
+      const gap = this.feet.y - sand;
+      let resting = penBest > 0.02;
+      if (!resting && gap > 0 && gap < 1.2) {
+        for (let i = 0; i < this.bodyPts.length; i++) {
+          const p = this.bodyPts[i];
+          if (p.y - p.r < terrainHeight(p.x, p.z) + 0.4) {
+            resting = true;
+            break;
+          }
+        }
+      }
+      const rocksNear = this.world.solids.some(
+        (s) => Math.abs(s.x - this.feet.x) < s.r + 1.6 && Math.abs(s.z - this.feet.z) < s.r + 1.6,
+      );
+      if (!rocksNear && gap > 0 && gap < 1.2 && resting) {
+        this.feet.y = sand;
+        if (this.velY < 0) this.velY = 0;
+        return;
+      }
+      if (!rocksNear && this.feet.y <= sand + 0.04) {
+        if (this.velY < 0) this.velY = 0;
+        return;
+      }
+    }
     if (penBest <= 0) return;
     const up = Math.max(ny, 0);
     let along = penBest;
@@ -1324,14 +1358,15 @@ export class Game {
     // Elevation stays atan(lift / hypot(back, side)) = 45°. A steep pitch used to
     // halve the lift, which dropped the camera to ~29° (and ~20° once the floor
     // got in the way). Terrain clearance pulls in along this same ray.
-    // On a steep dive the shoulder offset lines the camera up with the bead
-    // column, so the path draws through the suit and the screen cull hides it.
-    // Swing the camera behind the diver, still on the 45° circle.
+    // Come around to the side on a steep dive. From directly behind, the fins
+    // hide the suit. The radius and the lift still scale together, so the
+    // elevation stays 45°.
     const steep = Math.min(1, Math.max(0, -this.viewPitch - 0.7) / 0.45);
-    const radius = Math.hypot(back, side);
-    const sideNow = side * (1 - steep * 0.82);
-    const backNow = Math.sqrt(Math.max(0.25, radius * radius - sideNow * sideNow));
-    const lift = BALANCE.followLift;
+    const pull = 1 - steep * 0.06;
+    const radius = Math.hypot(back, side) * pull;
+    const sideNow = Math.min(radius * 0.92, side * pull * (1 + steep * 0.9));
+    const backNow = Math.sqrt(Math.max(0.35, radius * radius - sideNow * sideNow));
+    const lift = BALANCE.followLift * pull;
     const place = (s: number) => ({
       x: this.feet.x - fx * backNow * s + rx * sideNow * s,
       y: aimY + lift * s,
@@ -1343,7 +1378,7 @@ export class Game {
       if (tryAt.y >= terrainHeight(tryAt.x, tryAt.z) + 0.85) break;
       scale *= 0.72;
     }
-    scale = Math.max(0.18, scale);
+    scale = Math.max(0.62, scale);
     const parked = place(scale);
     const desiredX = parked.x;
     const desiredY = parked.y;
@@ -1362,10 +1397,11 @@ export class Game {
       this.camPos.z,
     );
     this.cam.up.set(0, 1, 0);
-    // Aim ahead and down the lane. The camera stays on the 45° ray.
-    const lead = 0.55 + steep * 8;
-    const drop = steep * 4.2;
-    this.cam.lookAt(this.feet.x + fx * lead, aimY - drop, this.feet.z + fz * lead);
+    // Look at the torso, with a short lead down the lane. The head is the
+    // downhill end, so a steep dive looks a little below the chest. That keeps
+    // the mask above the oxygen panel when the trench pulls the camera in.
+    const lead = 0.28 + steep * 0.22;
+    this.cam.lookAt(this.feet.x + fx * lead, aimY - 0.15 - steep * 0.62, this.feet.z + fz * lead);
   }
 
   private syncView(): void {
