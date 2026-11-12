@@ -547,11 +547,11 @@ export class OceanLife {
 
     const parrotWps: Array<[number, number, number]> = [
       [-12, 0, 14],
-      [4, 0, 18],
+      [14, 0, 34],
       [16, 0, 26],
       [6, 0, 34],
       [-14, 0, 30],
-      [-8, 0, 20],
+      [-16, 0, 36],
     ];
     for (let i = 0; i < 5; i++) {
       const mesh = makeFish({ length: 0.85, height: 0.38, color: i % 2 ? 0x2fbfa0 : 0x3aa0d8, belly: 0xf2d35a });
@@ -838,6 +838,7 @@ export class OceanLife {
         this.orbitClownfish(s, dt);
       } else if (s.species === 'parrotfish') {
         this.followWp(s, dt, 1.3);
+        this.clearAnemone(s);
         const floor = terrainHeight(s.x, s.z);
         s.y += (floor + 1.3 - s.y) * Math.min(1, dt * 2);
       } else if (s.species === 'turtle') {
@@ -1303,6 +1304,20 @@ export class OceanLife {
     return { x: s.x, y: s.y, z: s.z };
   }
 
+  /** Parrotfish and the octopus stay out of the anemone the clownfish circle. */
+  private clearAnemone(s: { x: number; z: number }): void {
+    const ax = LANDMARKS.anemone.x;
+    const az = LANDMARKS.anemone.z;
+    const dx = s.x - ax;
+    const dz = s.z - az;
+    const dist = Math.hypot(dx, dz);
+    const min = 8.5;
+    if (dist >= min) return;
+    const k = min / Math.max(0.25, dist);
+    s.x = ax + dx * k;
+    s.z = az + dz * k;
+  }
+
   private stepOctopus(dt: number, diver: Vector3, out: SimEvent): void {
     // Six seconds of colour in the open, then a still pose clear of the crevice rocks.
     // The idle pose does not drift, so a viewfinder can lock a stationary animal.
@@ -1339,6 +1354,10 @@ export class OceanLife {
         leg.rotation.x = 0.85 + (i % 2) * 0.15;
       });
     }
+    const kept = { x: this.octoX, z: this.octoZ };
+    this.clearAnemone(kept);
+    this.octoX = kept.x;
+    this.octoZ = kept.z;
     this.octopus.position.set(this.octoX, this.octoY, this.octoZ);
     this.octopus.rotation.y = this.displaying ? Math.sin(this.t * 0.6) * 0.4 : 0.35;
     const dist = Math.hypot(this.octoX - diver.x, this.octoY - diver.y, this.octoZ - diver.z);

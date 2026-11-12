@@ -416,11 +416,12 @@ export function shadeDiver(diver: Group, depth: number): void {
   finMat.fog = false;
   accent.fog = false;
   suit.emissive.setHex(0x3ec4d8);
-  suit.emissiveIntensity = 0.55 + k * 1.55;
+  // Stronger than the shallows so the suit still reads, short of clipping into the pale floor.
+  suit.emissiveIntensity = 0.5 + k * 0.65;
   skin.emissive.setHex(0xd9a07c);
-  skin.emissiveIntensity = 0.16 + k * 0.55;
+  skin.emissiveIntensity = 0.16 + k * 0.35;
   finMat.emissive.setHex(0x9af8ea);
-  finMat.emissiveIntensity = 0.28 + k * 0.7;
+  finMat.emissiveIntensity = 0.28 + k * 0.45;
   accent.emissive.setHex(0xff8a55);
   accent.emissiveIntensity = 0.18 + k * 0.5;
 }

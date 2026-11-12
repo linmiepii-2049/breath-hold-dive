@@ -154,6 +154,10 @@ const STR: Record<string, { zh: string; en: string }> = {
     zh: '已到水面',
     en: 'At the surface',
   },
+  'hud.surfaceLine': {
+    zh: '已到水面，氧气已回满。点「结束下潜」交片',
+    en: 'At the surface, oxygen is full. Tap End dive to turn the roll in.',
+  },
   'hud.legend1': { zh: '鼠标看 · Space 沿视线踢 · F 冲刺', en: 'Mouse looks · Space kicks along look · F sprint' },
   'hud.legend2': { zh: '右键开关取景 · 滚轮焦距 · 左键快门 · Esc 暂停', en: 'Right click toggles viewfinder · wheel zoom · LMB shutter · Esc pauses' },
   'hud.legend1touch': { zh: '左半边滑动转向 · 右手按住踢水', en: 'Drag the left half to look · right hand holds Kick' },

@@ -154,19 +154,6 @@ function seenFactor(clarity: number): number {
   return 0.3 + ((clarity - 0.15) / 0.6) * 0.7;
 }
 
-/**
- * Who the shutter is aimed at. A small animal on the reticle beats a larger
- * one toward the edge, and a closer animal beats a bigger one at the same aim.
- */
-function aimWeight(s: FrameSubject): number {
-  const off = Math.hypot(s.ndcX, s.ndcY);
-  const body = Math.max(0.05, Math.hypot(s.radiusNdcX, s.radiusNdcY));
-  const onReticle = off <= Math.max(0.16, body * 0.7);
-  const center = 1 / (0.1 + off * off);
-  const closeness = 1 / Math.max(0.45, s.distance);
-  return (onReticle ? 6 : 1) * center * closeness * (0.35 + s.clarity);
-}
-
 /** A creature in the water, before it is projected. */
 export interface AimCreature {
   species: SpeciesId;
@@ -248,25 +235,17 @@ function projectFrame(
  * A still animal is a subject. Motion only changes the moment line.
  */
 export function pickFromFrame(subjects: FrameSubject[], half = AIM_HALF): FrameSubject | null {
-  // The visible shell covering the bracket center is the subject, even when its own center sits just outside.
+  // The creature nearest the bracket centre. A larger body that merely covers
+  // the reticle does not beat a smaller one whose centre is closer.
   let best: FrameSubject | null = null;
-  let bestFill = -1;
+  let bestOff = 1e9;
   for (const s of subjects) {
-    if (!coversReticle(s)) continue;
-    if (s.fill > bestFill) {
-      bestFill = s.fill;
+    if (!inFrame(s)) continue;
+    if (!coversReticle(s) && !inAimZone(s, half)) continue;
+    const off = Math.hypot(s.ndcX, s.ndcY);
+    if (off < bestOff) {
+      bestOff = off;
       best = s;
-    }
-  }
-  if (!best) {
-    let bestWeight = -1;
-    for (const s of subjects) {
-      if (!inFrame(s) || !inAimZone(s, half)) continue;
-      const weight = aimWeight(s);
-      if (weight > bestWeight) {
-        bestWeight = weight;
-        best = s;
-      }
     }
   }
   // A sardine on the reticle must not steal a school whose center is in the bracket.
