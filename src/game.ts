@@ -104,7 +104,7 @@ export class Game {
   private qualityLow = 0;
   private qualityHigh = 0;
   /** Gap outside each rock so the suit and fins are not embedded in the mesh. */
-  private readonly rockClear = 0.3;
+  private readonly rockClear = 0.42;
   /** Sand sits closer. The slope resolve must not throw the diver upward. */
   private readonly sandClear = 0.08;
   /** Metres of upward terrain correction still allowed this frame. */
@@ -616,6 +616,9 @@ export class Game {
         viewCam.position.x,
         viewCam.position.z,
         viewCam,
+        this.look.x,
+        this.look.y,
+        this.look.z,
       );
       moveSnell(this.world.snell, this.cam.position.x, this.cam.position.z);
       if (this.debugOn && this.mode === 'dive') {
@@ -1037,7 +1040,9 @@ export class Game {
       add(side, 0.78 + leg.y, leg.z, 0.31 + skin);
       const stretch = 1 + 0.12 * this.save.gear.fins;
       const fin = rotX(-0.64, -0.06, stroke.leg);
-      add(side, 0.78 + fin.y, fin.z, 0.46 * stretch + skin);
+      add(side, 0.78 + fin.y, fin.z, 0.5 * stretch + skin);
+      const tip = rotX(-0.64, -0.5, stroke.leg);
+      add(side, 0.78 + tip.y, tip.z, 0.18 + skin);
     }
     // Capsule from the shoulders down through the fins, so a rock cannot sit in a gap between samples.
     for (let i = 0; i <= 6; i++) {
@@ -1548,10 +1553,10 @@ export class Game {
     if (this.mode !== 'dive') return;
     this.wantJudge = false;
     this.mode = 'judge';
-    this.judgePhase = this.photos.length === 0 ? 'summary' : 'review';
+    // Develop first on every platform. Submit is what opens the card, then the settlement.
+    this.judgePhase = 'review';
     this.judgeIndex = 0;
     this.committed = false;
-    if (this.photos.length === 0) this.commit();
     this.nonce++;
   }
 

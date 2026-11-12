@@ -69,7 +69,7 @@ export interface World {
   hemi: import('three').HemisphereLight;
   sun: import('three').DirectionalLight;
   solids: Solid[];
-  update(time: number, camY: number, diverDepth: number, diverX?: number, diverY?: number, diverZ?: number, camX?: number, camZ?: number, view?: PerspectiveCamera | null): void;
+  update(time: number, camY: number, diverDepth: number, diverX?: number, diverY?: number, diverZ?: number, camX?: number, camZ?: number, view?: PerspectiveCamera | null, lookX?: number, lookY?: number, lookZ?: number): void;
   /** Full detail draws light shafts. The low tier hides them and eases the fog. */
   setDetail(full: boolean): void;
 }
@@ -137,7 +137,7 @@ export function createWorld(): World {
   scene.add(reef);
   scene.add(wall);
   scene.add(laneRocks);
-  scene.add(buildFloorCoral());
+  scene.add(buildFloorCoral(solids));
   scene.add(buildBeach());
   const guideFades: Mesh[] = [];
   scene.add(buildTrenchGuide(guideFades));
@@ -171,7 +171,7 @@ export function createWorld(): World {
     hemi,
     sun,
     solids,
-    update(time, camY, diverDepth, diverX = 0, diverY = -diverDepth, diverZ = 0, camX = diverX, camZ = diverZ, view = null) {
+    update(time, camY, diverDepth, diverX = 0, diverY = -diverDepth, diverZ = 0, _camX = diverX, _camZ = diverZ, view = null, lookX = 0, lookY = 0, lookZ = 1) {
       const diveT = Math.min(1, diverDepth / 42);
       const under = Math.min(1, Math.max(0, (0.4 - camY) / 4));
       const waterMix = Math.max(under, diveT * 0.85);
@@ -199,29 +199,30 @@ export function createWorld(): World {
       fans.forEach((m, i) => {
         m.rotation.y = (m.userData.baseY as number) + Math.sin(time * 0.6 + i) * 0.08;
       });
-      // Hide any piece of the trail whose closest point is within 1.5 m of the body.
-      // A long link used to fade from its center and still cut through the torso.
+      // Links inside 4 m of the body are not drawn. Anything that still lands on
+      // the suit in screen space (a foreshortened segment, or a bead) is hidden too.
+      // Beads and links that sit clear of the diver stay visible.
+      const finder = !!view && view.near < 0.1;
+      if (view) refreshBodyScreen(view, diverX, diverY, diverZ, lookX, lookY, lookZ);
+      else bodyReady = false;
       for (let i = 0; i < guideFades.length; i++) {
         const mesh = guideFades[i];
         const seg = mesh.userData.seg as GuideSeg;
-        const d = Math.min(
-          distToSeg(diverX, diverY, diverZ, seg),
-          distToSeg(diverX, diverY - 0.75, diverZ, seg),
-          distToSeg(diverX, diverY + 0.45, diverZ, seg),
-        );
-        const dCam = distToSeg(camX, camY, camZ, seg);
-        const bodyT = Math.max(0, Math.min(1, (d - 2.2) / 0.9));
-        // Only a bead that fills the lens hides. Ones a few metres ahead stay in the descent view.
-        const camT = Math.max(0, Math.min(1, (dCam - 2.2) / 0.7));
-        const screenT = view && screenCoversDiver(view, diverX, diverY, diverZ, seg) ? 0 : 1;
-        const columnT = columnNearBody(diverX, diverY, diverZ, seg) ? 0 : 1;
-        // The viewfinder is the photo. Keep the swim guide out of the frame and out of the print.
-        const finder = !!view && view.near < 0.1;
-        const t = finder ? 0 : Math.min(bodyT, camT, screenT, columnT);
-        const fade = t * t * (3 - 2 * t);
         const mat = mesh.material as MeshBasicMaterial;
-        mat.opacity = (mesh.userData.baseOpacity as number) * fade;
-        mesh.visible = fade > 0.05;
+        const link = Math.hypot(seg.bx - seg.ax, seg.by - seg.ay, seg.bz - seg.az) > 0.05;
+        let hide = finder;
+        if (!hide && link) {
+          const near = Math.min(
+            distToSeg(diverX, diverY, diverZ, seg),
+            distToSeg(diverX - lookX * 1.15, diverY - lookY * 1.15, diverZ - lookZ * 1.15, seg),
+            distToSeg(diverX + lookX * 0.65, diverY + lookY * 0.65, diverZ + lookZ * 0.65, seg),
+          );
+          hide = near < 4 || segmentOnDiver(view, seg);
+        } else if (!hide) {
+          hide = pointOnDiver(view, seg.ax, seg.ay, seg.az, 0.32);
+        }
+        mat.opacity = hide ? 0 : (mesh.userData.baseOpacity as number);
+        mesh.visible = !hide;
       }
       if (detail) {
         shafts.forEach((m, i) => {
@@ -252,52 +253,115 @@ const guideDir = new Vector3();
 const screenA = new Vector3();
 const screenFwd = new Vector3();
 
-const screenBody = [new Vector3(), new Vector3(), new Vector3()];
+/** Screen box of the suit, shoulders, and fin blades. Refreshed once a frame. */
+let bodyReady = false;
+let bodyMinX = 2;
+let bodyMaxX = -2;
+let bodyMinY = 2;
+let bodyMaxY = -2;
+let bodyTan = 0.4;
+let bodyAspect = 1;
 
-/** The part of the trail that would paint across the head, chest, or fins. */
-function screenCoversDiver(cam: PerspectiveCamera, diverX: number, diverY: number, diverZ: number, seg: GuideSeg): boolean {
+/** Local diver points: +Y head, +X right, +Z belly. Includes the fin blades. */
+const BODY_SCREEN: Array<[number, number, number]> = [
+  [0, 1.72, 0],
+  [0.38, 1.3, 0],
+  [-0.38, 1.3, 0],
+  [0, 1.18, 0.24],
+  [0, 1.18, -0.24],
+  [0, 0.82, 0],
+  [0.22, 0.16, 0.52],
+  [-0.22, 0.16, 0.52],
+  [0.22, 0.14, -0.55],
+  [-0.22, 0.14, -0.55],
+  [0.58, 0.14, -0.06],
+  [-0.58, 0.14, -0.06],
+];
+
+function refreshBodyScreen(
+  cam: PerspectiveCamera,
+  diverX: number,
+  diverY: number,
+  diverZ: number,
+  lookX: number,
+  lookY: number,
+  lookZ: number,
+): void {
+  bodyReady = false;
+  bodyMinX = 2;
+  bodyMaxX = -2;
+  bodyMinY = 2;
+  bodyMaxY = -2;
   cam.updateMatrixWorld();
   cam.getWorldDirection(screenFwd);
-  const tanHalf = Math.tan((cam.fov * Math.PI) / 360) || 0.4;
-  const heights = [0.45, 0, -0.95];
-  for (let i = 0; i < heights.length; i++) screenBody[i].set(diverX, diverY + heights[i], diverZ).project(cam);
-  for (let s = 0; s <= 4; s++) {
-    const k = s / 4;
-    const x = seg.ax + (seg.bx - seg.ax) * k;
-    const y = seg.ay + (seg.by - seg.ay) * k;
-    const z = seg.az + (seg.bz - seg.az) * k;
-    const fx = x - cam.position.x;
-    const fy = y - cam.position.y;
-    const fz = z - cam.position.z;
-    if (fx * screenFwd.x + fy * screenFwd.y + fz * screenFwd.z < 0.15) continue;
-    screenA.set(x, y, z).project(cam);
-    const segDist = Math.max(0.5, Math.hypot(fx, fy, fz));
-    // A bead further down the lane can line up with the diver on screen and still be
-    // metres ahead. Only hide a sample that is actually on the suit.
-    const world = Math.hypot(x - diverX, y - diverY, z - diverZ);
-    if (world > 3.4) continue;
-    for (let b = 0; b < screenBody.length; b++) {
-      const ox = (screenA.x - screenBody[b].x) * cam.aspect;
-      const oy = screenA.y - screenBody[b].y;
-      if (Math.hypot(ox, oy) * segDist * tanHalf < 1.25) return true;
-    }
+  bodyTan = Math.tan((cam.fov * Math.PI) / 360) || 0.4;
+  bodyAspect = Math.max(0.3, cam.aspect);
+  const flat = Math.hypot(lookX, lookZ) || 1;
+  const rx = lookZ / flat;
+  const rz = -lookX / flat;
+  const bxx = -rz * lookY;
+  const byy = rz * lookX - rx * lookZ;
+  const bzz = rx * lookY;
+  const ox = diverX - lookX * 0.55;
+  const oy = diverY - 0.58 - lookY * 0.55;
+  const oz = diverZ - lookZ * 0.55;
+  let near = 99;
+  for (let i = 0; i < BODY_SCREEN.length; i++) {
+    const p = BODY_SCREEN[i];
+    const px = ox + rx * p[0] + lookX * p[1] + bxx * p[2];
+    const py = oy + lookY * p[1] + byy * p[2];
+    const pz = oz + rz * p[0] + lookZ * p[1] + bzz * p[2];
+    const fx = px - cam.position.x;
+    const fy = py - cam.position.y;
+    const fz = pz - cam.position.z;
+    if (fx * screenFwd.x + fy * screenFwd.y + fz * screenFwd.z < 0.2) continue;
+    screenA.set(px, py, pz).project(cam);
+    if (screenA.z < -1 || screenA.z > 1) continue;
+    bodyMinX = Math.min(bodyMinX, screenA.x);
+    bodyMaxX = Math.max(bodyMaxX, screenA.x);
+    bodyMinY = Math.min(bodyMinY, screenA.y);
+    bodyMaxY = Math.max(bodyMaxY, screenA.y);
+    near = Math.min(near, Math.hypot(fx, fy, fz));
   }
-  return false;
+  if (bodyMaxX < bodyMinX) return;
+  const dist = Math.max(0.6, near);
+  // The samples are joint centres. The suit and the fin blades extend about half a metre past them.
+  const padY = 0.7 / (dist * bodyTan);
+  const padX = padY / bodyAspect;
+  bodyMinX -= padX;
+  bodyMaxX += padX;
+  bodyMinY -= padY;
+  bodyMaxY += padY;
+  bodyReady = true;
 }
 
-/** A bead beside the chest, or under the fins, still paints across the suit. */
-function columnNearBody(diverX: number, diverY: number, diverZ: number, seg: GuideSeg): boolean {
-  const abx = seg.bx - seg.ax;
-  const aby = seg.by - seg.ay;
-  const abz = seg.bz - seg.az;
-  const ab2 = abx * abx + aby * aby + abz * abz || 1;
-  let t = ((diverX - seg.ax) * abx + (diverY - seg.ay) * aby + (diverZ - seg.az) * abz) / ab2;
-  t = Math.max(0, Math.min(1, t));
-  const x = seg.ax + abx * t;
-  const y = seg.ay + aby * t;
-  const z = seg.az + abz * t;
-  const horiz = Math.hypot(x - diverX, z - diverZ);
-  return horiz < 1.9 && y < diverY + 0.85 && y > diverY - 3.2;
+/** True when a world point, expanded by `radius` metres, lands on the suit. */
+function pointOnDiver(cam: PerspectiveCamera | null, x: number, y: number, z: number, radius: number): boolean {
+  if (!cam || !bodyReady) return false;
+  const bx = x - cam.position.x;
+  const by = y - cam.position.y;
+  const bz = z - cam.position.z;
+  if (bx * screenFwd.x + by * screenFwd.y + bz * screenFwd.z < 0.2) return false;
+  screenA.set(x, y, z).project(cam);
+  if (screenA.z < -1 || screenA.z > 1) return false;
+  const dist = Math.max(0.4, Math.hypot(bx, by, bz));
+  const padY = radius / (dist * bodyTan);
+  const padX = padY / bodyAspect;
+  return (
+    screenA.x + padX >= bodyMinX &&
+    screenA.x - padX <= bodyMaxX &&
+    screenA.y + padY >= bodyMinY &&
+    screenA.y - padY <= bodyMaxY
+  );
+}
+
+function segmentOnDiver(cam: PerspectiveCamera | null, seg: GuideSeg): boolean {
+  if (!cam || !bodyReady) return false;
+  for (let i = 0; i <= 4; i++) {
+    const t = i / 4;
+    if (pointOnDiver(cam, seg.ax + (seg.bx - seg.ax) * t, seg.ay + (seg.by - seg.ay) * t, seg.az + (seg.bz - seg.az) * t, 0.08)) return true;
+  }
+  return false;
 }
 
 interface GuideSeg {
@@ -527,7 +591,7 @@ function pushRock(
   boxX.set(1, 0, 0).applyQuaternion(boxQuat);
   boxY.set(0, 1, 0).applyQuaternion(boxQuat);
   boxZ.set(0, 0, 1).applyQuaternion(boxQuat);
-  const skin = 0.08;
+  const skin = 0.32;
   const hx = Math.abs(sx) + skin;
   const hy = Math.abs(sy) + skin;
   const hz = Math.abs(sz) + skin;
@@ -661,7 +725,7 @@ function buildLaneRocks(solids: Solid[]): Mesh {
 }
 
 /** A few low-poly coral heads on the 41 m lane, so the floor is not only sand and one dark stone. */
-function buildFloorCoral(): Group {
+function buildFloorCoral(solids: Solid[]): Group {
   const g = new Group();
   const teal = new MeshLambertMaterial({ color: 0x3ed0be, emissive: 0x146860, emissiveIntensity: 0.95, flatShading: true });
   const rose = new MeshLambertMaterial({ color: 0xe8889c, emissive: 0x8a3850, emissiveIntensity: 0.75, flatShading: true });
@@ -676,9 +740,11 @@ function buildFloorCoral(): Group {
     const a = new Mesh(UNIT.cone, s.mat);
     a.scale.set(0.32, s.h, 0.32);
     a.position.set(x, floor + s.h * 0.45, s.z);
+    pushRock(solids, x, floor + s.h * 0.45, s.z, 0, 0, 0, 0.32, s.h * 0.5, 0.32);
     const b = new Mesh(UNIT.cone, s.mat === teal ? rose : teal);
     b.scale.set(0.2, s.h * 0.65, 0.2);
     b.position.set(x + 0.38, floor + s.h * 0.28, s.z + 0.22);
+    pushRock(solids, x + 0.38, floor + s.h * 0.28, s.z + 0.22, 0, 0, 0, 0.2, s.h * 0.32, 0.2);
     g.add(a, b);
   }
   return g;

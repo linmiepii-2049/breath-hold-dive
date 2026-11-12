@@ -169,8 +169,14 @@ export class GameUI {
       if (this.root.classList.contains('aiming')) this.hooks.shutter();
       else this.hooks.camera();
     });
-    this.press(q('#touch-end'), () => this.hooks.endDive());
-    this.press(q('#touch-end-paused'), () => this.hooks.endDive());
+    this.press(q('#touch-end'), () => {
+      this.swallowPointer();
+      this.hooks.endDive();
+    });
+    this.press(q('#touch-end-paused'), () => {
+      this.swallowPointer();
+      this.hooks.endDive();
+    });
     this.holdButton(q('#touch-kick'), (down) => this.hooks.kick(down));
     q('#sens')?.addEventListener('input', (ev) => {
       const value = Number((ev.target as HTMLInputElement).value);
@@ -198,6 +204,20 @@ export class GameUI {
         if (id) this.hooks.debug(id);
       });
     });
+  }
+
+  /** The finger is still down when the judge screen replaces the button. Swallow that click. */
+  private swallowPointer(): void {
+    const stop = (ev: Event) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+    };
+    window.addEventListener('pointerup', stop, true);
+    window.addEventListener('click', stop, true);
+    window.setTimeout(() => {
+      window.removeEventListener('pointerup', stop, true);
+      window.removeEventListener('click', stop, true);
+    }, 500);
   }
 
   /** A tap that fires once on press, so a shutter or a sprint does not wait for release. */
@@ -518,7 +538,7 @@ export class GameUI {
     if (m.judgePhase === 'summary' || m.photos.length === 0) {
       const best = m.photos.reduce((n, p) => Math.max(n, p.score.total), 0);
       const rejected = m.photos.filter((p) => p.score.species && p.score.total < BALANCE.minAccept).length;
-      return `<div class="modal"><div class="panel settle" style="width:min(460px,100%)">
+      return `<div class="modal"><div class="panel settle">
         <div class="card-body">
           <p class="dim">${t('judge.kicker')}</p>
           <h2>${t('judge.settle')}</h2>
@@ -766,7 +786,7 @@ export class GameUI {
     }
     const bracket = this.root.querySelector('.aim-bracket')?.getBoundingClientRect();
     if (!bracket) return;
-    const gapPx = 16;
+    const gapPx = 24;
     focus.style.whiteSpace = 'nowrap';
     focus.style.left = '50%';
     focus.style.right = 'auto';
@@ -818,6 +838,16 @@ export class GameUI {
     let placed = placeAt(below, '50%', 'translateX(-50%)');
     if (blocked(placed)) placed = placeAt(above, '50%', 'translateX(-50%)');
     if (blocked(placed)) placed = placeAt(below, '12px', 'none');
+    const bracketNow = this.root.querySelector('.aim-bracket')?.getBoundingClientRect();
+    if (bracketNow && placed.height > 0) {
+      const aboveIt = placed.bottom <= bracketNow.top;
+      const belowIt = placed.top >= bracketNow.bottom;
+      const gapNow = aboveIt ? bracketNow.top - placed.bottom : belowIt ? placed.top - bracketNow.bottom : -1;
+      if (gapNow < 12) {
+        if (placed.top < bracketNow.top) placed = placeAt(bracketNow.top - 12 - placed.height, '50%', 'translateX(-50%)');
+        else placed = placeAt(bracketNow.bottom + 12, '50%', 'translateX(-50%)');
+      }
+    }
     const focusTop = placed.top;
     if (toasts) {
       const below = focusTop + labelH + 8;
