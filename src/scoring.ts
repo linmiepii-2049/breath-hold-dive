@@ -115,11 +115,22 @@ export function inAimZone(s: FrameSubject, half = AIM_HALF): boolean {
 /** Motion credit. Distance stays in composition and danger, not in this line. */
 const ACTION_MOMENT = 10;
 
-/** The reticle sits inside this creature's projected body. */
+/**
+ * The collision sphere is larger than the shell you can see. Lock only when the
+ * reticle is inside about 70% of that sphere, as an ellipse, so open water
+ * beside a turtle does not count as the body covering the bracket center.
+ */
+const BODY_SILHOUETTE = 0.7;
+
 function coversReticle(s: FrameSubject): boolean {
   if (!s.inFront || s.fill < 0.04) return false;
   if (Math.abs(s.ndcX) > 1.2 || Math.abs(s.ndcY) > 1.2) return false;
-  return Math.abs(s.ndcX) <= s.radiusNdcX && Math.abs(s.ndcY) <= s.radiusNdcY;
+  const rx = s.radiusNdcX * BODY_SILHOUETTE;
+  const ry = s.radiusNdcY * BODY_SILHOUETTE;
+  if (rx < 1e-4 || ry < 1e-4) return false;
+  const nx = s.ndcX / rx;
+  const ny = s.ndcY / ry;
+  return nx * nx + ny * ny <= 1;
 }
 
 /** The moment animal has to be plainly in the picture, not a speck, a haze blob, or a shape behind weed. */
@@ -237,7 +248,7 @@ function projectFrame(
  * A still animal is a subject. Motion only changes the moment line.
  */
 export function pickFromFrame(subjects: FrameSubject[], half = AIM_HALF): FrameSubject | null {
-  // A shell that covers the bracket center is the subject even when its own center sits just outside.
+  // The visible shell covering the bracket center is the subject, even when its own center sits just outside.
   let best: FrameSubject | null = null;
   let bestFill = -1;
   for (const s of subjects) {

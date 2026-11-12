@@ -669,12 +669,13 @@ export class Game {
     const deepK = clamp((depth - 8) / 28, 0, 1);
     // The chest light stays gentle so the suit does not blow out. The follow camera
     // carries a fill that lights rocks within about 10 m, and it falls off after that.
-    this.nearLight.intensity = 5.4 * (1 - deepK * 0.4);
-    this.nearLight.distance = 12;
-    this.nearLight.decay = 1 + deepK;
-    this.fillLight.intensity = 8 * (1 - deepK) + deepK * 52;
-    this.fillLight.distance = 18;
-    this.fillLight.decay = 1.35 + deepK * 0.45;
+    // Local light at depth, still short of the old whiteout. Rocks within ~8 m stay readable.
+    this.nearLight.intensity = 5.4 * (1 - deepK) + deepK * 16;
+    this.nearLight.distance = 14;
+    this.nearLight.decay = 2;
+    this.fillLight.intensity = 8 * (1 - deepK) + deepK * 150;
+    this.fillLight.distance = 26;
+    this.fillLight.decay = 1.35 + deepK * 0.65;
     const fp = this.mode === 'dive' && this.viewfinder;
     this.headlamp.intensity = fp ? 6 + deepK * 18 : 1.5 + deepK * 3;
     this.headlamp.distance = 13;
@@ -1307,7 +1308,11 @@ export class Game {
     const rx = -Math.cos(this.camYaw);
     const rz = Math.sin(this.camYaw);
     const aimY = this.feet.y + BALANCE.followAim;
-    const lift = BALANCE.followLift;
+    // On the floor a 45° camera puts the lane on the top edge. Drop the camera and
+    // look along the path so the beads ahead stay in the frame.
+    const onFloor = this.feet.y < terrainHeight(this.feet.x, this.feet.z) + 1.7;
+    const along = onFloor ? Math.min(1, Math.max(0, -this.viewPitch - 0.25) / 0.4) : 0;
+    const lift = BALANCE.followLift * (1 - along * 0.5);
     const place = (s: number) => ({
       x: this.feet.x - fx * back * s + rx * side * s,
       y: aimY + lift * s,
@@ -1340,7 +1345,8 @@ export class Game {
       this.camPos.z,
     );
     this.cam.up.set(0, 1, 0);
-    this.cam.lookAt(this.feet.x + fx * 0.55, aimY, this.feet.z + fz * 0.55);
+    const lead = 0.55 + along * 2.4;
+    this.cam.lookAt(this.feet.x + fx * lead, aimY - along * 0.2, this.feet.z + fz * lead);
   }
 
   private syncView(): void {

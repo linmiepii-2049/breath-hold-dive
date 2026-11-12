@@ -766,22 +766,64 @@ export class GameUI {
     }
     const bracket = this.root.querySelector('.aim-bracket')?.getBoundingClientRect();
     if (!bracket) return;
-    const o2h = Math.max(36, o2.getBoundingClientRect().height);
-    const top = Math.max(4, Math.min(8, bracket.top - o2h - 8));
+    const gapPx = 16;
+    focus.style.whiteSpace = 'nowrap';
+    focus.style.left = '50%';
+    focus.style.right = 'auto';
+    focus.style.bottom = 'auto';
+    focus.style.transform = 'translateX(-50%)';
+    focus.style.top = '0px';
+    const labelH = Math.max(18, Math.ceil(focus.getBoundingClientRect().height));
+    const o2h = Math.max(32, o2.getBoundingClientRect().height);
+    const reserve = labelH + gapPx * 2;
+    const top = Math.max(4, Math.min(8, bracket.top - o2h - reserve));
     o2.style.top = `${top}px`;
     o2.style.bottom = 'auto';
-    o2.style.maxHeight = `${Math.max(32, bracket.top - top - 6)}px`;
+    o2.style.maxHeight = `${Math.max(28, bracket.top - top - reserve)}px`;
     o2.style.overflow = 'hidden';
-    const focusTop = Math.min(h - 22, bracket.bottom + 8);
-    focus.style.top = `${focusTop}px`;
-    focus.style.bottom = 'auto';
-    focus.style.left = '50%';
-    focus.style.transform = 'translateX(-50%)';
+
+    const overlaps = (a: DOMRect, b: DOMRect | undefined) =>
+      !!b &&
+      a.width > 2 &&
+      b.width > 2 &&
+      a.left < b.right - 1 &&
+      a.right > b.left + 1 &&
+      a.top < b.bottom - 1 &&
+      a.bottom > b.top + 1;
+    const depthBox = this.root.querySelector('.hud-tl')?.getBoundingClientRect();
+    const padBox = this.root.querySelector('.touch-pad')?.getBoundingClientRect();
+    const lockOf = () => {
+      const lock = this.root.querySelector('#aim-lock') as HTMLElement | null;
+      if (!lock || !lock.classList.contains('on')) return undefined;
+      return lock.getBoundingClientRect();
+    };
+    const blocked = (r: DOMRect) =>
+      overlaps(r, this.root.querySelector('.aim-bracket')?.getBoundingClientRect()) ||
+      overlaps(r, lockOf()) ||
+      overlaps(r, o2.getBoundingClientRect()) ||
+      overlaps(r, depthBox) ||
+      overlaps(r, padBox) ||
+      r.top < 2 ||
+      r.bottom > h - 2;
+    const placeAt = (y: number, left: string, transform: string) => {
+      focus.style.left = left;
+      focus.style.transform = transform;
+      focus.style.top = `${Math.round(y)}px`;
+      return focus.getBoundingClientRect();
+    };
+    // Under the corner bracket, and clear of the gold subject box. The gap above the
+    // bracket is where a close animal's lock sits, so that slot is the second try.
+    const below = bracket.bottom + gapPx;
+    const above = bracket.top - gapPx - labelH;
+    let placed = placeAt(below, '50%', 'translateX(-50%)');
+    if (blocked(placed)) placed = placeAt(above, '50%', 'translateX(-50%)');
+    if (blocked(placed)) placed = placeAt(below, '12px', 'none');
+    const focusTop = placed.top;
     if (toasts) {
-      const below = focusTop + 28;
+      const below = focusTop + labelH + 8;
       const padTop = h - margin - rows * btn - gap;
-      if (below + 36 < padTop) toasts.style.top = `${below}px`;
-      else toasts.style.top = `${Math.max(2, bracket.top - 34)}px`;
+      if (below + 36 < padTop && below > bracket.bottom) toasts.style.top = `${below}px`;
+      else toasts.style.top = `${Math.max(2, Math.min(focusTop, bracket.top) - 34)}px`;
       toasts.style.left = 'calc(8px + env(safe-area-inset-left, 0px))';
       toasts.style.right = 'auto';
       toasts.style.transform = 'none';
