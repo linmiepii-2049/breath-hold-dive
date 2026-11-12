@@ -11,10 +11,10 @@
 }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; overflow: hidden; background: #071018; }
+html, body { margin: 0; height: 100%; height: 100dvh; overflow: hidden; background: #071018; }
 body { user-select: none; }
-canvas#c { display: block; width: 100%; height: 100%; }
-#ui { position: fixed; inset: 0; pointer-events: none; }
+canvas#c { display: block; width: 100%; height: 100%; height: 100dvh; }
+#ui { position: fixed; inset: 0; height: 100dvh; pointer-events: none; }
 .webgl-fail {
   pointer-events: auto;
   position: absolute;
@@ -195,14 +195,14 @@ button:hover:not(:disabled) { filter: brightness(1.08); }
   text-shadow: 0 0 18px rgba(255, 60, 70, 0.7);
 }
 #ui.danger #vignette {
-  background: radial-gradient(circle at center, transparent 0 46%, rgba(160, 16, 28, 0.28) 68%, rgba(120, 0, 16, 0.72) 100%);
+  background: radial-gradient(circle at center, transparent 0 70%, rgba(170, 24, 36, 0.28) 86%, rgba(150, 0, 18, 0.82) 100%);
   animation: danger-pulse 0.8s ease-in-out infinite;
 }
 #ui.charging #vignette {
-  background: radial-gradient(circle at center, transparent 0 42%, rgba(180, 12, 24, 0.34) 66%, rgba(130, 0, 12, 0.78) 100%);
+  background: radial-gradient(circle at center, transparent 0 70%, rgba(190, 16, 28, 0.32) 86%, rgba(160, 0, 14, 0.88) 100%);
 }
 @keyframes danger-pulse {
-  0%, 100% { opacity: 0.62; }
+  0%, 100% { opacity: 0.8; }
   50% { opacity: 1; }
 }
 .warn kbd,
@@ -278,7 +278,7 @@ button:hover:not(:disabled) { filter: brightness(1.08); }
   padding: 6px 12px; font-size: 14px;
 }
 #vignette, #blackout, #flash { position: absolute; inset: 0; pointer-events: none; opacity: 0; }
-#vignette { background: radial-gradient(circle at center, transparent 46%, rgba(120, 0, 20, 0.28) 100%); }
+#vignette { background: radial-gradient(circle at center, transparent 0 72%, rgba(120, 0, 20, 0.34) 100%); }
 #blackout { background: #010308; }
 #flash { background: white; }
 
@@ -423,20 +423,33 @@ body.touch .touch-pad {
   position: absolute;
   z-index: 6;
   right: calc(10px + env(safe-area-inset-right, 0px));
-  bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  bottom: var(--touch-bottom, calc(14px + env(safe-area-inset-bottom, 0px)));
   display: grid;
-  grid-template-columns: 64px 64px;
-  gap: 8px;
+  grid-template-columns: var(--touch-btn, 58px) var(--touch-btn, 58px);
+  gap: var(--touch-gap, 6px);
 }
 body.touch .touch-pad button {
-  width: 64px;
-  height: 64px;
+  width: var(--touch-btn, 58px);
+  height: var(--touch-btn, 58px);
+  min-width: 0;
+  min-height: 0;
   padding: 4px;
   border-radius: 16px;
   font-size: 15px;
   touch-action: none;
 }
-body.touch #touch-end { grid-column: 1 / -1; width: auto; height: 56px; display: none; }
+body.touch #touch-end {
+  position: fixed;
+  left: calc(12px + env(safe-area-inset-left, 0px));
+  right: auto;
+  bottom: var(--touch-bottom, calc(14px + env(safe-area-inset-bottom, 0px)));
+  width: auto;
+  height: var(--touch-btn, 58px);
+  min-height: 0;
+  padding: 0 14px;
+  display: none;
+  z-index: 7;
+}
 body.touch #ui.surfaced:not(.is-paused) #touch-end { display: flex; align-items: center; justify-content: center; }
 body.touch #touch-end-paused { display: none; margin-top: 12px; }
 body.touch #ui.surfaced.is-paused #touch-end-paused {

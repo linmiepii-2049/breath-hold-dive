@@ -731,6 +731,61 @@ export class GameUI {
     }
     if (black) black.style.opacity = String(m.blackout);
     if (flash) flash.style.opacity = String(m.flash);
+    this.layoutTouch(m);
+  }
+
+  /** Fit the right-hand pad and the camera HUD to the visible height, not a desktop window. */
+  private layoutTouch(m: UIModel): void {
+    if (!this.touch) return;
+    const vv = window.visualViewport;
+    const h = Math.max(1, Math.round(Math.min(window.innerHeight, vv?.height ?? window.innerHeight)));
+    const margin = 14;
+    const gap = 6;
+    const rows = 2;
+    let btn = Math.floor((h * 0.34 - gap) / rows);
+    btn = Math.max(44, Math.min(64, btn));
+    if (margin + rows * btn + gap > h - 8) btn = Math.max(40, Math.floor((h - 8 - margin - gap) / rows));
+    this.root.style.height = `${h}px`;
+    this.root.style.setProperty('--touch-btn', `${btn}px`);
+    this.root.style.setProperty('--touch-gap', `${gap}px`);
+    this.root.style.setProperty('--touch-bottom', `calc(${margin}px + env(safe-area-inset-bottom, 0px))`);
+
+    const o2 = this.root.querySelector('.hud-bc') as HTMLElement | null;
+    const focus = this.root.querySelector('#focus') as HTMLElement | null;
+    const toasts = this.root.querySelector('#toasts') as HTMLElement | null;
+    if (!m.viewfinder || !o2 || !focus) {
+      o2?.style.removeProperty('top');
+      o2?.style.removeProperty('maxHeight');
+      focus?.style.removeProperty('top');
+      focus?.style.removeProperty('left');
+      focus?.style.removeProperty('transform');
+      toasts?.style.removeProperty('top');
+      toasts?.style.removeProperty('left');
+      toasts?.style.removeProperty('transform');
+      return;
+    }
+    const bracket = this.root.querySelector('.aim-bracket')?.getBoundingClientRect();
+    if (!bracket) return;
+    const o2h = Math.max(36, o2.getBoundingClientRect().height);
+    const top = Math.max(4, Math.min(8, bracket.top - o2h - 8));
+    o2.style.top = `${top}px`;
+    o2.style.bottom = 'auto';
+    o2.style.maxHeight = `${Math.max(32, bracket.top - top - 6)}px`;
+    o2.style.overflow = 'hidden';
+    const focusTop = Math.min(h - 22, bracket.bottom + 8);
+    focus.style.top = `${focusTop}px`;
+    focus.style.bottom = 'auto';
+    focus.style.left = '50%';
+    focus.style.transform = 'translateX(-50%)';
+    if (toasts) {
+      const below = focusTop + 28;
+      const padTop = h - margin - rows * btn - gap;
+      if (below + 36 < padTop) toasts.style.top = `${below}px`;
+      else toasts.style.top = `${Math.max(2, bracket.top - 34)}px`;
+      toasts.style.left = 'calc(8px + env(safe-area-inset-left, 0px))';
+      toasts.style.right = 'auto';
+      toasts.style.transform = 'none';
+    }
   }
 }
 

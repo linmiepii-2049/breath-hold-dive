@@ -94,6 +94,41 @@ const stillOcto = scoreFrame({
   nearestPredator: 40,
 });
 assert(stillOcto.moment === 0 && stillOcto.momentNote === 'none', `still octopus has no moment (${stillOcto.total})`);
+
+const farCam = new PerspectiveCamera(48, 1280 / 800, 0.1, 200);
+farCam.position.set(6, -4, 9);
+farCam.lookAt(6, -20, 60);
+farCam.updateMatrixWorld(true);
+const farShark = computeSubject(farCam, [
+  {
+    species: 'shark',
+    rarity: 20,
+    x: 18,
+    y: -34,
+    z: 60,
+    radius: 1.6,
+    optimal: 8,
+    moment: null,
+    dangerous: true,
+    acting: true,
+  },
+]);
+assert(farShark.subject === null && farShark.frames.length === 0, 'a shark past 22 m is not a subject');
+const nearShark = computeSubject(farCam, [
+  {
+    species: 'shark',
+    rarity: 20,
+    x: 6,
+    y: -6,
+    z: 22,
+    radius: 1.6,
+    optimal: 8,
+    moment: null,
+    dangerous: true,
+    acting: true,
+  },
+]);
+assert(nearShark.frames.length === 1, 'a shark inside 22 m can still be framed');
 assert(movingOcto.moment === 10 && movingOcto.momentNote === 'action', 'moving octopus earns the action base');
 assert(movingOcto.total === stillOcto.total + 10, `the action line is the only change (${stillOcto.total} -> ${movingOcto.total})`);
 assert(movingOcto.total >= 60 && movingOcto.total <= 80, `moving octopus in the bracket passes ${movingOcto.total}`);

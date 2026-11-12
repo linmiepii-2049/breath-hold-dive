@@ -18,6 +18,7 @@ import {
   MeshLambertMaterial,
   MeshPhongMaterial,
   PlaneGeometry,
+  PerspectiveCamera,
   Quaternion,
   Scene,
   ShaderMaterial,
@@ -68,7 +69,7 @@ export interface World {
   hemi: import('three').HemisphereLight;
   sun: import('three').DirectionalLight;
   solids: Solid[];
-  update(time: number, camY: number, diverDepth: number, diverX?: number, diverY?: number, diverZ?: number, camX?: number, camZ?: number): void;
+  update(time: number, camY: number, diverDepth: number, diverX?: number, diverY?: number, diverZ?: number, camX?: number, camZ?: number, view?: PerspectiveCamera | null): void;
   /** Full detail draws light shafts. The low tier hides them and eases the fog. */
   setDetail(full: boolean): void;
 }
@@ -129,10 +130,13 @@ export function createWorld(): World {
   const solids: Solid[] = [];
   const reef = buildReef(solids);
   const wall = buildWall(solids);
+  const laneRocks = buildLaneRocks(solids);
   reef.userData.occluder = true;
   wall.userData.occluder = true;
+  laneRocks.userData.occluder = true;
   scene.add(reef);
   scene.add(wall);
+  scene.add(laneRocks);
   scene.add(buildBeach());
   const guideFades: Mesh[] = [];
   scene.add(buildTrenchGuide(guideFades));
@@ -166,13 +170,13 @@ export function createWorld(): World {
     hemi,
     sun,
     solids,
-    update(time, camY, diverDepth, diverX = 0, diverY = -diverDepth, diverZ = 0, camX = diverX, camZ = diverZ) {
+    update(time, camY, diverDepth, diverX = 0, diverY = -diverDepth, diverZ = 0, camX = diverX, camZ = diverZ, view = null) {
       const diveT = Math.min(1, diverDepth / 42);
       const under = Math.min(1, Math.max(0, (0.4 - camY) / 4));
       const waterMix = Math.max(under, diveT * 0.85);
-      // Distance falls toward deep blue. Density stays low inside ~12 m so the near reef is not a smudge.
-      fog.color.copy(air).lerp(shallow, Math.min(1, waterMix * 1.05)).lerp(deep, 0.22 + diveT * 0.62);
-      const haze = 0.0022 + waterMix * 0.0022 + diveT * 0.0075;
+      // Distance falls toward deep blue. Density stays low inside ~12 m so a rock and the beads stay readable.
+      fog.color.copy(air).lerp(shallow, Math.min(1, waterMix * 1.05)).lerp(deep, 0.18 + diveT * 0.55);
+      const haze = 0.0014 + waterMix * 0.0011 + diveT * 0.0036;
       fog.density = detail ? haze : haze * 0.72;
       hemi.intensity = 1.4 - diveT * 0.12;
       sun.intensity = 1.6 - diveT * 0.18;
@@ -204,10 +208,14 @@ export function createWorld(): World {
           distToSeg(diverX, diverY + 0.45, diverZ, seg),
         );
         const dCam = distToSeg(camX, camY, camZ, seg);
-        const bodyT = Math.max(0, Math.min(1, (d - 1.5) / 1.15));
+        const bodyT = Math.max(0, Math.min(1, (d - 2.2) / 0.9));
         // A bead in the follow lens becomes a screen-filling disc. Hide that, keep the ones ahead.
-        const camT = Math.max(0, Math.min(1, (dCam - 3.4) / 1.3));
-        const t = Math.min(bodyT, camT);
+        const camT = Math.max(0, Math.min(1, (dCam - 4.4) / 1.2));
+        const screenT = view && screenCoversDiver(view, diverX, diverY, diverZ, seg) ? 0 : 1;
+        const columnT = columnNearBody(diverX, diverY, diverZ, seg) ? 0 : 1;
+        // The viewfinder is the photo. Keep the swim guide out of the frame and out of the print.
+        const finder = !!view && view.near < 0.1;
+        const t = finder ? 0 : Math.min(bodyT, camT, screenT, columnT);
         const fade = t * t * (3 - 2 * t);
         const mat = mesh.material as MeshBasicMaterial;
         mat.opacity = (mesh.userData.baseOpacity as number) * fade;
@@ -239,6 +247,52 @@ export function createWorld(): World {
 
 const guideUp = new Vector3(0, 1, 0);
 const guideDir = new Vector3();
+const screenA = new Vector3();
+const screenFwd = new Vector3();
+
+const screenBody = [new Vector3(), new Vector3(), new Vector3()];
+
+/** The part of the trail that would paint across the head, chest, or fins. */
+function screenCoversDiver(cam: PerspectiveCamera, diverX: number, diverY: number, diverZ: number, seg: GuideSeg): boolean {
+  cam.updateMatrixWorld();
+  cam.getWorldDirection(screenFwd);
+  const tanHalf = Math.tan((cam.fov * Math.PI) / 360) || 0.4;
+  const heights = [0.45, 0, -0.95];
+  for (let i = 0; i < heights.length; i++) screenBody[i].set(diverX, diverY + heights[i], diverZ).project(cam);
+  for (let s = 0; s <= 4; s++) {
+    const k = s / 4;
+    const x = seg.ax + (seg.bx - seg.ax) * k;
+    const y = seg.ay + (seg.by - seg.ay) * k;
+    const z = seg.az + (seg.bz - seg.az) * k;
+    const fx = x - cam.position.x;
+    const fy = y - cam.position.y;
+    const fz = z - cam.position.z;
+    if (fx * screenFwd.x + fy * screenFwd.y + fz * screenFwd.z < 0.15) continue;
+    screenA.set(x, y, z).project(cam);
+    const segDist = Math.max(0.5, Math.hypot(fx, fy, fz));
+    for (let b = 0; b < screenBody.length; b++) {
+      const ox = (screenA.x - screenBody[b].x) * cam.aspect;
+      const oy = screenA.y - screenBody[b].y;
+      if (Math.hypot(ox, oy) * segDist * tanHalf < 2.2) return true;
+    }
+  }
+  return false;
+}
+
+/** A bead beside the chest, or under the fins, still paints across the suit. */
+function columnNearBody(diverX: number, diverY: number, diverZ: number, seg: GuideSeg): boolean {
+  const abx = seg.bx - seg.ax;
+  const aby = seg.by - seg.ay;
+  const abz = seg.bz - seg.az;
+  const ab2 = abx * abx + aby * aby + abz * abz || 1;
+  let t = ((diverX - seg.ax) * abx + (diverY - seg.ay) * aby + (diverZ - seg.az) * abz) / ab2;
+  t = Math.max(0, Math.min(1, t));
+  const x = seg.ax + abx * t;
+  const y = seg.ay + aby * t;
+  const z = seg.az + abz * t;
+  const horiz = Math.hypot(x - diverX, z - diverZ);
+  return horiz < 1.9 && y < diverY + 0.85 && y > diverY - 3.2;
+}
 
 interface GuideSeg {
   ax: number;
@@ -275,9 +329,9 @@ function tagSeg(mesh: Mesh, ax: number, ay: number, az: number, bx: number, by: 
   mesh.userData.baseOpacity = opacity;
 }
 
-/** Bead x at this z. It stays in the deep channel, just off the diver's lane. */
+/** Bead x at this z. On the default heading, shifted right so the line sits beside the diver, not through the body. */
 function beadX(z: number): number {
-  return 12.2 + Math.max(0, z - 30) * 0.04;
+  return 6.2 + Math.max(0, z - 9) * Math.tan(0.15) + 1.7;
 }
 
 /** Glide height: in the water the diver actually swims, never under the floor. */
@@ -327,36 +381,34 @@ function buildTrenchGuide(fades: Mesh[]): Group {
   const gold = 0xffc24a;
   const orange = 0xff5a18;
   let prev: Vector3 | null = null;
-  for (let z = 11; z <= 84; z += 2.5) {
+  for (let z = 14; z <= 84; z += 2.5) {
     const x = beadX(z);
-    const p = guideBead(g, fades, x, z, gold, 0.32, beadHeight(x, z));
+    const p = guideBead(g, fades, x, z, gold, 0.26, beadHeight(x, z));
     if (prev) guideLink(g, fades, prev, p, gold, 0.045);
     prev = p;
   }
-  const post = new Mesh(new CylinderGeometry(0.14, 0.14, 8, 6), guideMaterial(gold));
-  const lipZ = 26;
-  const lipX = beadX(lipZ);
-  post.position.set(lipX, terrainHeight(lipX, lipZ) + 4, lipZ);
-  tagSeg(post, lipX, post.position.y - 4, lipZ, lipX, post.position.y + 4, lipZ, 1);
-  g.add(post);
-  fades.push(post);
-  const ax = LANDMARKS.anemone.x + 3.1;
-  const az = LANDMARKS.anemone.z - 2.6;
+  // Orange beads start a few metres ahead on the default look, then bend left to the anemone.
+  // No vertical pole: that line was landing in the viewfinder and in photos.
+  const lookX = Math.sin(0.15);
+  const lookZ = Math.cos(0.15);
+  const sx = 6.2 + lookX * 4.8 + 1.5;
+  const sz = 9 + lookZ * 4.8;
+  const ax = LANDMARKS.anemone.x;
+  const az = LANDMARKS.anemone.z;
+  const yStart = -2.15;
+  const yEnd = terrainHeight(ax, az) + 1.7;
   let op: Vector3 | null = null;
-  const steps = 7;
+  const steps = 8;
   for (let i = 0; i <= steps; i++) {
     const k = i / steps;
-    const x = 6.2 + (ax - 6.2) * k;
-    const z = 9.2 + (az - 9.2) * k;
-    const p = guideBead(g, fades, x, z, orange, 0.2, terrainHeight(x, z) + 1.55);
-    if (op) guideLink(g, fades, op, p, orange, 0.035);
+    const bend = Math.sin(k * Math.PI) * 1.4;
+    const x = sx + (ax - sx) * k - lookZ * bend;
+    const z = sz + (az - sz) * k + lookX * bend;
+    const y = yStart + (yEnd - yStart) * k;
+    const p = guideBead(g, fades, x, z, orange, 0.34, y);
+    if (op) guideLink(g, fades, op, p, orange, 0.04);
     op = p;
   }
-  const pole = new Mesh(new CylinderGeometry(0.045, 0.045, 5.5, 5), guideMaterial(orange));
-  pole.position.set(ax, terrainHeight(ax, az) + 2.4, az);
-  tagSeg(pole, ax, pole.position.y - 2.75, az, ax, pole.position.y + 2.75, az, 1);
-  g.add(pole);
-  fades.push(pole);
   return g;
 }
 
@@ -432,8 +484,8 @@ function buildFloor(): Mesh {
         float nearK = 1.0 - smoothstep(1.5, 12.0, nearD);
         // Far trench sand recedes. The patch within ~12 m of the diver stays a readable tan.
         float grain = sin(vWorld.x * 1.6 + vWorld.z * 0.4) * sin(vWorld.z * 1.35);
-        vec3 deepSand = vec3(0.46, 0.56, 0.50) * (0.78 + 0.28 * lam) + vec3(0.05, 0.04, 0.02) * grain;
-        col = mix(col, mix(col * 0.34, deepSand, nearK), deepT);
+        vec3 deepSand = vec3(0.30, 0.52, 0.56) * (0.92 + 0.34 * lam) + vec3(0.02, 0.03, 0.03) * grain;
+        col = mix(col, mix(col * 0.62, deepSand, nearK), deepT);
         gl_FragColor = vec4(col, 1.0);
         #include <fog_fragment>
       }
@@ -568,6 +620,33 @@ function buildReef(solids: Solid[]): Mesh {
     emissiveIntensity: 0.7,
   });
   return new Mesh(geo, mat);
+}
+
+/** Stones just off the default heading, at the 34 m and 41 m water, so a straight descent has a rock in view. */
+function buildLaneRocks(solids: Solid[]): Mesh {
+  const parts: { geo: BufferGeometry; matrix: Matrix4; color: Color }[] = [];
+  const color = new Color(0xc5dde3);
+  for (const z of [48, 56, 66, 74]) {
+    const x = beadX(z) + 4.4;
+    const floor = terrainHeight(x, z);
+    const s = 1.45;
+    const py = floor + s * 0.42;
+    parts.push({
+      geo: UNIT.ico,
+      matrix: M(x, py, z, 0.35, 1.1, 0.25, s, s * 0.8, s * 1.05),
+      color,
+    });
+    pushRock(solids, x, py, z, 0.35, 1.1, 0.25, s, s * 0.8, s * 1.05);
+  }
+  return new Mesh(
+    mergeParts(parts),
+    new MeshLambertMaterial({
+      vertexColors: true,
+      flatShading: true,
+      emissive: 0x2c6670,
+      emissiveIntensity: 1.15,
+    }),
+  );
 }
 
 function buildWall(solids: Solid[]): Mesh {
