@@ -43,6 +43,8 @@ export interface SimEvent {
   sharkCharge: boolean;
   /** True while a shark is charging. */
   sharkCharging: boolean;
+  /** F was held and the diver turned far enough to break the warning or the charge. */
+  sharkFled: boolean;
   /** True on the frame the octopus colour show becomes visible nearby. */
   octopusStart: boolean;
 }
@@ -114,17 +116,15 @@ export class OceanLife {
   private orcaTold = false;
   /** Charge aim. `min` is the closest gap so far, kept for the log. */
   private chargeDir = new Map<Swimmer, { x: number; y: number; z: number; ox: number; oy: number; oz: number; start: number; min: number; stall: number }>();
-  private diverPx = 0;
-  private diverPy = 0;
-  private diverPz = 0;
-  private diverSpeed = 0;
-  /** Seconds the speed has stayed in the sprint band. A one-frame wall pop does not count. */
-  private sprintHold = 0;
-  /** Seconds the diver has been yawing hard. A slow look around does not count. */
-  private turnHold = 0;
   private prevYaw = 0;
   private yawReady = false;
-  private diverReady = false;
+  /** F is down this tick. A kick never sets it. */
+  private sprinting = false;
+  /** Radians turned while F is held during the current warning or charge. */
+  private escapeYaw = 0;
+  /** Stays on once the turn clears 35°, so a later frame cannot still bite. */
+  private escaped = false;
+  private fleeTold = false;
   private octoTold = false;
   /** Circle frozen on the diver's position when the warning started. A sprint leaves the ring. */
   private orbitAnchor = new Map<Swimmer, { x: number; y: number; z: number; radius: number; ang: number }>();
@@ -155,9 +155,11 @@ export class OceanLife {
 
   reset(): void {
     this.t = 0;
-    this.turnHold = 0;
     this.yawReady = false;
-    this.sprintHold = 0;
+    this.sprinting = false;
+    this.escapeYaw = 0;
+    this.escaped = false;
+    this.fleeTold = false;
     this.bait = 'flock';
     this.nextBait = 40;
     this.baitLeft = 0;
@@ -215,8 +217,10 @@ export class OceanLife {
     this.bait = 'flock';
     this.nextBait = 99999;
     this.baitLeft = 0;
-    this.sprintHold = 0;
-    this.turnHold = 0;
+    this.sprinting = false;
+    this.escapeYaw = 0;
+    this.escaped = false;
+    this.fleeTold = false;
     for (const other of this.swimmers) {
       if (other.species !== 'shark' || other === shark) continue;
       other.state = 'patrol';
@@ -399,22 +403,9 @@ export class OceanLife {
       sharkThreat: false,
       sharkCharge: false,
       sharkCharging: false,
+      sharkFled: false,
       octopusStart: false,
     };
-    if (this.diverReady) {
-      this.diverSpeed =
-        Math.hypot(diver.x - this.diverPx, diver.y - this.diverPy, diver.z - this.diverPz) / Math.max(dt, 1e-4);
-    } else {
-      this.diverSpeed = 0;
-    }
-    // Cruise is about 2.45 m/s. A sprint sits above 3 m/s. One frame of a solid
-    // correction can land in that band and must not cancel a charge.
-    if (this.diverSpeed > 3.05 && this.diverSpeed < 8) this.sprintHold += dt;
-    else this.sprintHold = 0;
-    this.diverPx = diver.x;
-    this.diverPy = diver.y;
-    this.diverPz = diver.z;
-    this.diverReady = true;
     if (this.debugLock > 0) {
       this.debugLock = Math.max(0, this.debugLock - dt);
       if (this.debugOcto) {
@@ -955,9 +946,9 @@ export class OceanLife {
   }
 
   /**
-   * For the first 20 s the reef shark is parked well outside the spawn and its
-   * mesh is hidden, so it cannot be the viewfinder subject. A trench shark that
-   * is already deep is left on its route.
+   * For the first 20 s both sharks are hidden. The reef shark is parked well
+   * outside the spawn. The trench shark stays on its route but its mesh is off,
+   * so looking down the trench from the start cannot lock it.
    */
   private applySpawnGrace(): void {
     for (const s of this.swimmers) {
@@ -966,17 +957,13 @@ export class OceanLife {
         s.mesh.visible = true;
         continue;
       }
-      const dist = Math.hypot(s.x - 6.2, s.z - 9);
-      const shallow = s.y > -22;
       if (s === this.sharkA) {
-        s.x = 34;
-        s.y = -17;
-        s.z = 62;
+        s.x = 36;
+        s.y = -18;
+        s.z = 72;
         s.mesh.position.set(s.x, s.y, s.z);
-        s.mesh.visible = false;
-      } else if (dist < 40 && shallow) {
-        s.mesh.visible = false;
       }
+      s.mesh.visible = false;
     }
   }
 
@@ -1042,28 +1029,29 @@ export class OceanLife {
     s.yaw = Math.atan2(a.x - s.x, a.z - s.z);
   }
 
-  /** A sprint is well above a drift or a cruise kick, and has to last a moment. */
-  /** Called once per physics step with the diver's current yaw. */
-  noteHeading(yaw: number, dt: number): void {
-    if (this.yawReady) {
+  /** F burst this tick. A kick does not call this. */
+  noteSprint(on: boolean): void {
+    this.sprinting = on;
+  }
+
+  /** Yaw this physics step. Degrees turned while F is held add up for the whole warning. */
+  noteHeading(yaw: number): void {
+    if (this.yawReady && this.sprinting && this.sharkEngaged()) {
       let d = yaw - this.prevYaw;
       while (d > Math.PI) d -= Math.PI * 2;
       while (d < -Math.PI) d += Math.PI * 2;
-      const rate = Math.abs(d) / Math.max(dt, 1e-4);
-      if (rate > 1.15) this.turnHold = Math.min(0.6, this.turnHold + dt);
-      else this.turnHold = Math.max(0, this.turnHold - dt * 1.5);
+      this.escapeYaw += Math.abs(d);
+      if (this.escapeYaw > (35 * Math.PI) / 180) this.escaped = true;
     }
     this.prevYaw = yaw;
     this.yawReady = true;
   }
 
-  private diverSprinting(): boolean {
-    return this.sprintHold >= 0.16;
-  }
-
-  /** A sprint or a sustained hard turn. Drifting and a slow look do not count. */
-  private escaping(): boolean {
-    return this.diverSprinting() || this.turnHold > 0.18;
+  private sharkEngaged(): boolean {
+    for (const s of this.swimmers) {
+      if (s.species === 'shark' && (s.state === 'warn' || s.state === 'charge')) return true;
+    }
+    return false;
   }
 
   /** Lock a run at the diver. It keeps homing until it touches a diver who only drifts. */
@@ -1086,8 +1074,24 @@ export class OceanLife {
     if (this.sharkLog && s.state !== next) {
       console.info(`[shark] ${s.state} -> ${next} dist=${dist.toFixed(1)} t=${this.t.toFixed(1)}`);
     }
+    if (next === 'warn' && s.state !== 'warn') {
+      const other = this.swimmers.some(
+        (o) => o !== s && o.species === 'shark' && (o.state === 'warn' || o.state === 'charge'),
+      );
+      if (!other) {
+        this.escapeYaw = 0;
+        this.escaped = false;
+        this.fleeTold = false;
+      }
+    }
     s.state = next;
     s.timer = timer;
+  }
+
+  private noteFlee(out: SimEvent): void {
+    if (!this.escaped || this.fleeTold) return;
+    this.fleeTold = true;
+    out.sharkFled = true;
   }
 
   private stepShark(s: Swimmer, dt: number, diver: Vector3, aggro: boolean, out: SimEvent): void {
@@ -1110,17 +1114,15 @@ export class OceanLife {
       this.holdCircle(s, dt);
       const now = Math.hypot(s.x - diver.x, s.y - diver.y, s.z - diver.z);
       const horizNow = Math.hypot(s.x - diver.x, s.z - diver.z);
-      const anchor = this.orbitAnchor.get(s);
-      const moved = anchor ? Math.hypot(diver.x - anchor.x, diver.z - anchor.z) : 0;
-      // Horizontal only. A floor that lifts the shark must not count as the diver fleeing.
-      // A couple of metres of drift is not an escape. A sprint or a hard turn is.
-      const fled = this.escaping() || moved > 3.2 || horizNow > 16;
-      if (fled) {
-        if (this.sharkLog) {
-          console.info(
-            `[shark] warn abort sprint=${this.diverSprinting()} turn=${this.turnHold > 0.18} moved=${moved.toFixed(1)} horiz=${horizNow.toFixed(1)}`,
-          );
-        }
+      // Kicking, drifting a few metres, or turning without F does not cancel.
+      // Out of the ring horizontally, the warning simply ends.
+      const turnDeg = (this.escapeYaw * 180) / Math.PI;
+      if (this.escaped) {
+        this.noteFlee(out);
+        if (this.sharkLog) console.info(`[shark] warn abort sprint=true turn=${turnDeg.toFixed(0)} escaped=true`);
+        this.setShark(s, 'patrol', now, 11);
+      } else if (horizNow > 16) {
+        if (this.sharkLog) console.info(`[shark] warn abort sprint=${this.sprinting} turn=${turnDeg.toFixed(0)} escaped=false horiz=${horizNow.toFixed(1)}`);
         this.setShark(s, 'patrol', now, 11);
       } else if (s.timer <= 0) {
         if (horizNow <= 14) {
@@ -1165,17 +1167,19 @@ export class OceanLife {
       const now = Math.hypot(s.x - diver.x, s.y - diver.y, s.z - diver.z);
       const horizLeft = Math.hypot(s.x - diver.x, s.z - diver.z);
       const vert = Math.abs(s.y - diver.y);
-      const escaping = this.escaping();
-      // Close enough to bite a diver who is not sprinting or turning away.
+      // The latch is checked before the bite, so the frame the turn crosses 35° cannot still hit.
       const close = now < 3.5 || (horizLeft <= 3 && vert <= 5);
-      if (close && !escaping) {
+      const turnDeg = (this.escapeYaw * 180) / Math.PI;
+      if (this.escaped) {
+        this.noteFlee(out);
+        if (this.sharkLog) console.info(`[shark] charge abort sprint=true turn=${turnDeg.toFixed(0)} escaped=true`);
+        this.setShark(s, 'patrol', now, 12);
+      } else if (close) {
         this.setShark(s, 'retreat', now, 4.5);
         out.hit = out.hit ?? 'shark';
-      } else if (escaping || s.timer <= 0 || now > 22) {
+      } else if (s.timer <= 0 || now > 22) {
         if (this.sharkLog) {
-          console.info(
-            `[shark] charge abort sprint=${this.diverSprinting()} turn=${this.turnHold > 0.18} now=${now.toFixed(1)} t=${s.timer.toFixed(1)}`,
-          );
+          console.info(`[shark] charge abort sprint=${this.sprinting} turn=${turnDeg.toFixed(0)} escaped=false now=${now.toFixed(1)}`);
         }
         this.setShark(s, 'patrol', now, 12);
       }
@@ -1319,11 +1323,23 @@ export class OceanLife {
       this.octoY += (floor + 1.35 - this.octoY) * blend;
       this.octoZ += (showZ - this.octoZ) * blend;
     }
-    const color = this.displaying ? OCTO_SHOW[Math.floor(this.t / 0.85) % OCTO_SHOW.length] : 0x6a5348;
+    const color = this.displaying ? OCTO_SHOW[Math.floor(this.t / 0.85) % OCTO_SHOW.length] : 0x5a463c;
     this.octopus.userData.displayColor = color;
-    animateTail(this.octopus, this.t, 1.4, 0);
+    const bodyMat = this.octopus.userData.bodyMat as MeshLambertMaterial | undefined;
+    if (bodyMat) {
+      bodyMat.emissive.setHex(this.displaying ? color : 0x000000);
+      bodyMat.emissiveIntensity = this.displaying ? 0.85 : 0;
+    }
+    // A resting octopus does not wave its arms or yaw. The colour show is the animation.
+    animateTail(this.octopus, this.displaying ? this.t : 0, this.displaying ? 1.4 : 0, 0);
+    if (!this.displaying) {
+      const legs = this.octopus.userData.legs as Group[] | undefined;
+      legs?.forEach((leg) => {
+        leg.rotation.x = 0.12;
+      });
+    }
     this.octopus.position.set(this.octoX, this.octoY, this.octoZ);
-    this.octopus.rotation.y = this.displaying ? Math.sin(this.t * 0.6) * 0.4 : Math.sin(this.t * 0.2) * 0.25;
+    this.octopus.rotation.y = this.displaying ? Math.sin(this.t * 0.6) * 0.4 : 0.35;
     const dist = Math.hypot(this.octoX - diver.x, this.octoY - diver.y, this.octoZ - diver.z);
     if (this.displaying && !this.octoTold && dist < 16) {
       this.octoTold = true;
@@ -1424,8 +1440,7 @@ export class OceanLife {
     }
     for (const s of this.swimmers) {
       if (s.species === 'orca' && !this.orcaVisible) continue;
-      if (s.species === 'shark' && !s.mesh.visible) continue;
-      if (s.species === 'shark' && this.calmSpawn() && s.y > -22) continue;
+      if (s.species === 'shark' && (!s.mesh.visible || this.calmSpawn())) continue;
       let moment: MomentId | null = null;
       if (s.species === 'turtle' && s.state === 'breathe') moment = 'turtleBreath';
       if (s.species === 'shark' && s === this.sharkA && scatter) moment = 'baitball';

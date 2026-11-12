@@ -91,6 +91,8 @@ function distancePoints(s: FrameSubject): number {
  * subject placed on the thirds. The viewfinder draws this box.
  */
 export const AIM_HALF = 0.34;
+/** Farther than this, a creature is scenery. The viewfinder will not lock it. */
+export const MAX_SUBJECT_DISTANCE = 22;
 
 /**
  * Center inside the bracket, or a solid body that overlaps it by most of its size
@@ -203,7 +205,7 @@ function projectFrame(
     const dz = s.z - camera.position.z;
     const dist = Math.hypot(dx, dy, dz);
     if (dx * forward.x + dy * forward.y + dz * forward.z < 0.25) continue;
-    if (dist < 0.35) continue;
+    if (dist < 0.35 || dist > MAX_SUBJECT_DISTANCE) continue;
     const fogT = Math.exp(-((fog * dist) ** 2));
     if (fogT < 0.16) continue;
     projectVec.set(s.x, s.y, s.z).project(camera);

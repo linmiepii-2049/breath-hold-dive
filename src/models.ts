@@ -411,8 +411,12 @@ export function shadeDiver(diver: Group, depth: number): void {
   const skin = diver.userData.skin as MeshLambertMaterial;
   const finMat = diver.userData.finMat as MeshLambertMaterial;
   const accent = diver.userData.accent as MeshLambertMaterial;
+  suit.fog = false;
+  skin.fog = false;
+  finMat.fog = false;
+  accent.fog = false;
   suit.emissive.setHex(0x3ec4d8);
-  suit.emissiveIntensity = 0.42 + k * 1.7;
+  suit.emissiveIntensity = 0.55 + k * 1.55;
   skin.emissive.setHex(0xd9a07c);
   skin.emissiveIntensity = 0.16 + k * 0.55;
   finMat.emissive.setHex(0x9af8ea);

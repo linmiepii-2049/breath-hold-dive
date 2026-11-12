@@ -27,7 +27,7 @@ import {
   o2Drain,
 } from './balance';
 import { OceanLife, type SimEvent } from './creatures';
-import { setLang, t } from './i18n';
+import { f, setLang, t } from './i18n';
 import { animateDiver, diverStroke, makeDiver, shadeDiver, tintDiver } from './models';
 import { AIM_HALF, computeSubject, scoreFrame, type FrameSubject, type ScoreBreakdown } from './scoring';
 import { lockLandscape, prefersTouch } from './touch';
@@ -345,6 +345,7 @@ export class Game {
     this.last = performance.now();
     this.resize();
     window.addEventListener('resize', this.resize);
+    window.visualViewport?.addEventListener('resize', this.resize);
     requestAnimationFrame(this.frame);
   }
 
@@ -604,15 +605,17 @@ export class Game {
       }
       if (diving && this.viewfinder && this.lmb && this.aimNow) this.shoot(this.aimNow.score);
       const depth = this.mode === 'dive' ? depthMeters(this.feet.y) : 0;
+      const viewCam = this.mode === 'dive' && this.viewfinder ? this.fpCam : this.cam;
       this.world.update(
         this.time,
-        this.cam.position.y,
+        viewCam.position.y,
         depth,
         this.feet.x,
         this.feet.y + 1,
         this.feet.z,
-        this.cam.position.x,
-        this.cam.position.z,
+        viewCam.position.x,
+        viewCam.position.z,
+        viewCam,
       );
       moveSnell(this.world.snell, this.cam.position.x, this.cam.position.z);
       if (this.debugOn && this.mode === 'dive') {
@@ -669,9 +672,9 @@ export class Game {
     this.nearLight.intensity = 5.4 * (1 - deepK * 0.4);
     this.nearLight.distance = 12;
     this.nearLight.decay = 1 + deepK;
-    this.fillLight.intensity = 9.5 * (1 - deepK) + deepK * 44;
-    this.fillLight.distance = 22 - deepK * 4;
-    this.fillLight.decay = 1 + deepK;
+    this.fillLight.intensity = 8 * (1 - deepK) + deepK * 52;
+    this.fillLight.distance = 18;
+    this.fillLight.decay = 1.35 + deepK * 0.45;
     const fp = this.mode === 'dive' && this.viewfinder;
     this.headlamp.intensity = fp ? 6 + deepK * 18 : 1.5 + deepK * 3;
     this.headlamp.distance = 13;
@@ -720,7 +723,6 @@ export class Game {
   }
 
   private simDive(dt: number): void {
-    this.life.noteHeading(this.viewYaw, dt);
     this.invuln = Math.max(0, this.invuln - dt);
     this.shotCd = Math.max(0, this.shotCd - dt);
     this.forcedT = Math.max(0, this.forcedT - dt);
@@ -736,6 +738,8 @@ export class Game {
 
     const depth = depthMeters(this.feet.y);
     const bursting = this.burstT > 0;
+    this.life.noteSprint(bursting);
+    this.life.noteHeading(this.viewYaw);
     this.o2 = Math.max(0, this.o2 - o2Drain(depth, this.save.gear.suit, this.save.efficiency, bursting) * dt);
     if (this.o2 <= 0 && !this.blackout) {
       this.blackout = true;
@@ -952,6 +956,17 @@ export class Game {
         this.pushBox(s, 'rock');
       }
       this.pushTerrain();
+      const sand = terrainHeight(this.feet.x, this.feet.z) + 0.22;
+      const hL = terrainHeight(this.feet.x - 0.6, this.feet.z);
+      const hR = terrainHeight(this.feet.x + 0.6, this.feet.z);
+      const hD = terrainHeight(this.feet.x, this.feet.z - 0.6);
+      const hU = terrainHeight(this.feet.x, this.feet.z + 0.6);
+      const slope = Math.max(Math.abs(hL - hR), Math.abs(hD - hU));
+      // Hold the feet on flat sand, including the 41 m floor. A steep face still uses the slope push.
+      if (this.feet.y < sand && slope < 1.4) {
+        this.feet.y = sand;
+        if (this.velY < 0) this.velY = 0;
+      }
       const bodies = this.life.bodies();
       for (let i = 0; i < bodies.length; i++) {
         const s = bodies[i];
@@ -1489,16 +1504,19 @@ export class Game {
     if (ev.orcaStart) this.pushToast('toast.orcaNear');
     if (ev.sharkWarn) this.pushToast('toast.sharkNear');
     if (ev.sharkCharge) this.pushToast('toast.sharkCharge');
+    if (ev.sharkFled) this.pushToast('toast.sharkFled', undefined, 3.4);
     this.sharkThreat = ev.sharkThreat;
     this.sharkCharging = ev.sharkCharging;
     if (!ev.hit || this.invuln > 0 || this.blackout) return;
-    this.invuln = 2.7;
+    // Short enough that a second shark, or the next charge, still deducts.
+    this.invuln = 0.55;
     this.stamina = Math.max(0, this.stamina - BALANCE.hitStamina);
     this.fines += BALANCE.hitFine;
     this.forcedT = 2.5;
     this.shake = 0.75;
     this.audio.bubbles();
-    this.pushToast(ev.hit === 'shark' ? 'toast.shark' : 'toast.orca');
+    if (ev.hit === 'shark') this.pushToast('toast.shark', f('toast.shark', { n: Math.round(this.stamina) }));
+    else this.pushToast('toast.orca');
     if (this.stamina <= 0) {
       this.lockSurface = true;
       this.pushToast('toast.done');
@@ -1850,7 +1868,12 @@ export class Game {
   }
 
   private pushToast(key: string, text?: string, ttl = 3.1): void {
-    if (this.toasts.some((toast) => toast.key === key)) return;
+    const existing = this.toasts.find((toast) => toast.key === key);
+    if (existing) {
+      existing.ttl = Math.max(existing.ttl, ttl);
+      if (text) existing.text = text;
+      return;
+    }
     this.toasts.push({ key, ttl, text });
   }
 
@@ -2163,10 +2186,17 @@ export class Game {
     if (this.mode !== 'shore' && this.mode !== 'judge') this.open('shore');
   }
 
+  /** CSS pixels actually on screen. A phone browser's innerHeight can be taller than the visible area. */
+  private viewBox(): { w: number; h: number } {
+    const vv = window.visualViewport;
+    const w = Math.max(1, Math.round(Math.min(window.innerWidth, vv?.width ?? window.innerWidth)));
+    const h = Math.max(1, Math.round(Math.min(window.innerHeight, vv?.height ?? window.innerHeight)));
+    return { w, h };
+  }
+
   private resize = (): void => {
     this.applyPixelRatio();
-    const w = window.innerWidth;
-    const h = Math.max(1, window.innerHeight);
+    const { w, h } = this.viewBox();
     this.cam.aspect = w / h;
     this.fpCam.aspect = w / h;
     this.cam.updateProjectionMatrix();
@@ -2179,7 +2209,7 @@ export class Game {
    * going smaller than this.
    */
   private minRenderScale(): number {
-    const w = Math.max(1, window.innerWidth);
+    const w = this.viewBox().w;
     const cap = Math.min(window.devicePixelRatio || 1, 1.5);
     const want = Math.max(w * 0.6, Math.min(w, 640));
     return Math.min(1, want / (w * cap));
@@ -2189,7 +2219,10 @@ export class Game {
   private applyPixelRatio(): void {
     const cap = Math.min(window.devicePixelRatio || 1, 1.5);
     this.renderer.setPixelRatio(cap * this.renderScale);
-    this.renderer.setSize(window.innerWidth, Math.max(1, window.innerHeight), false);
+    const { w, h } = this.viewBox();
+    document.documentElement.style.height = `${h}px`;
+    document.body.style.height = `${h}px`;
+    this.renderer.setSize(w, h, false);
   }
 
   /** Step the resolution down while frames stay slow, and ease it back when they recover. */
