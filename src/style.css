@@ -293,6 +293,7 @@ button:hover:not(:disabled) { filter: brightness(1.08); }
 .pause p { font-size: 20px; color: #f4fffd; line-height: 1.45; }
 
 .modal .panel.sheet { width: min(1080px, calc(100vw - 32px)); overflow: hidden; }
+.panel.settle { width: min(460px, calc(100vw - 28px)); }
 .film { display: flex; gap: 8px; overflow: visible; padding-bottom: 4px; }
 .film figure { margin: 0; flex: 1 1 0; min-width: 0; width: auto; }
 .film img { width: 100%; height: auto; aspect-ratio: 16/9; object-fit: cover; background: #102028; border-radius: 8px; }
@@ -439,14 +440,14 @@ body.touch .touch-pad button {
   touch-action: none;
 }
 body.touch #touch-end {
-  position: fixed;
-  left: calc(12px + env(safe-area-inset-left, 0px));
-  right: auto;
-  bottom: var(--touch-bottom, calc(14px + env(safe-area-inset-bottom, 0px)));
+  position: absolute;
+  left: 0;
+  right: 0;
   width: auto;
-  height: var(--touch-btn, 58px);
+  bottom: calc(100% + 8px);
+  height: 44px;
   min-height: 0;
-  padding: 0 14px;
+  padding: 0 8px;
   display: none;
   z-index: 7;
 }
@@ -503,18 +504,24 @@ body.touch .btn-name { margin-left: 6px; font-size: 13px; }
   body.touch .dock-scroll { overflow: auto; min-height: 0; flex: 1 1 auto; }
   body.touch .dock .actions, body.touch .dock #reset { flex: none; }
   body.touch .modal {
-    padding: calc(8px + env(safe-area-inset-top, 0px)) 8px calc(8px + env(safe-area-inset-bottom, 0px));
-    align-items: stretch;
+    padding: calc(12px + env(safe-area-inset-top, 0px)) 14px calc(14px + env(safe-area-inset-bottom, 0px));
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
   }
   body.touch .modal .panel,
-  body.touch .modal .card {
+  body.touch .modal .card,
+  body.touch .modal .panel.settle {
     display: flex;
     flex-direction: column;
-    height: 100%;
-    max-height: 100%;
+    height: auto;
+    width: min(720px, calc(100vw - 28px));
+    max-width: calc(100vw - 28px);
+    max-height: calc(100dvh - 28px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
     overflow: hidden;
     min-height: 0;
     margin: 0 auto;
+    box-sizing: border-box;
   }
   body.touch .modal .panel { padding: 10px 12px; }
   body.touch .card-body,
@@ -540,7 +547,7 @@ body.touch .btn-name { margin-left: 6px; font-size: 13px; }
   body.touch .modal .card .actions { background: #f4efe4; }
   body.touch .item p { min-height: 0; }
   body.touch .film img { max-height: 22vh; }
-  body.touch .card { width: min(460px, calc(100vw - 16px)); padding: 10px 12px 8px; }
+  body.touch .card { width: 100%; max-width: 100%; padding: 10px 12px 8px; }
   body.touch .card img { max-height: 12vh; object-fit: cover; }
   body.touch .score-row { margin: 3px 0; }
   body.touch .sum .net { font-size: 22px; }
