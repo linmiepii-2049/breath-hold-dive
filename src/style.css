@@ -459,7 +459,14 @@ body.touch #ui.surfaced.is-paused #touch-end-paused {
   align-items: center;
   justify-content: center;
 }
-body.touch #touch-shutter { visibility: visible; opacity: 0.55; }
+body.touch #touch-shutter {
+  visibility: visible;
+  opacity: 0.55;
+  white-space: nowrap;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 2px;
+}
 body.touch #touch-shutter.ready { opacity: 1; }
 .rotate-overlay {
   display: none;
