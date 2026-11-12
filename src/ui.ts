@@ -457,6 +457,7 @@ export class GameUI {
         <div class="burst" id="burst">${t('toast.kick')}</div>
       </div>
       <div class="meter"><div class="pin" id="pin"></div></div>
+      <div id="surface-line"></div>
       <div class="hud-bc panel">
         <div class="lbl">${t('hud.o2')}</div>
         <div class="bar o2" id="o2bar"><span id="o2fill"></span></div>
@@ -699,8 +700,21 @@ export class GameUI {
       warn.classList.toggle('charge', m.sharkCharging);
       if (m.sharkCharging) warn.textContent = t('hud.sharkCharge');
       else if (m.sharkThreat) warn.textContent = t('hud.shark');
-      else if (m.atSurface) warn.innerHTML = t(m.touch ? 'hud.surfaceTouch' : 'hud.surface');
+      else if (m.atSurface && !m.touch) warn.innerHTML = t('hud.surface');
       else warn.textContent = m.warnReturn ? t('hud.return') : '';
+    }
+    const surfaceLine = this.root.querySelector('#surface-line') as HTMLElement | null;
+    if (surfaceLine) {
+      const show = !!(m.touch && m.atSurface && !m.sharkCharging && !m.sharkThreat);
+      surfaceLine.textContent = show ? t('hud.surfaceLine') : '';
+      surfaceLine.classList.toggle('on', show);
+      if (show) {
+        surfaceLine.style.left = '16px';
+        surfaceLine.style.right = 'auto';
+        surfaceLine.style.width = 'min(340px, 46vw)';
+        surfaceLine.style.top = '78px';
+        surfaceLine.style.textAlign = 'left';
+      }
     }
     const pin = this.root.querySelector('#pin') as HTMLElement | null;
     if (pin) pin.style.top = `${Math.max(0, Math.min(100, (m.depth / 40) * 100))}%`;

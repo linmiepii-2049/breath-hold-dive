@@ -14,6 +14,7 @@ import {
   Euler,
   Matrix4,
   Mesh,
+  Object3D,
   MeshBasicMaterial,
   MeshLambertMaterial,
   MeshPhongMaterial,
@@ -69,7 +70,7 @@ export interface World {
   hemi: import('three').HemisphereLight;
   sun: import('three').DirectionalLight;
   solids: Solid[];
-  update(time: number, camY: number, diverDepth: number, diverX?: number, diverY?: number, diverZ?: number, camX?: number, camZ?: number, view?: PerspectiveCamera | null, lookX?: number, lookY?: number, lookZ?: number): void;
+  update(time: number, camY: number, diverDepth: number, diverX?: number, diverY?: number, diverZ?: number, camX?: number, camZ?: number, view?: PerspectiveCamera | null, lookX?: number, lookY?: number, lookZ?: number, diver?: Object3D | null): void;
   /** Full detail draws light shafts. The low tier hides them and eases the fog. */
   setDetail(full: boolean): void;
 }
@@ -171,7 +172,7 @@ export function createWorld(): World {
     hemi,
     sun,
     solids,
-    update(time, camY, diverDepth, diverX = 0, diverY = -diverDepth, diverZ = 0, _camX = diverX, _camZ = diverZ, view = null, lookX = 0, lookY = 0, lookZ = 1) {
+    update(time, camY, diverDepth, diverX = 0, diverY = -diverDepth, diverZ = 0, _camX = diverX, _camZ = diverZ, view = null, lookX = 0, lookY = 0, lookZ = 1, diver: Object3D | null = null) {
       const diveT = Math.min(1, diverDepth / 42);
       const under = Math.min(1, Math.max(0, (0.4 - camY) / 4));
       const waterMix = Math.max(under, diveT * 0.85);
@@ -203,7 +204,8 @@ export function createWorld(): World {
       // the suit in screen space (a foreshortened segment, or a bead) is hidden too.
       // Beads and links that sit clear of the diver stay visible.
       const finder = !!view && view.near < 0.1;
-      if (view) refreshBodyScreen(view, diverX, diverY, diverZ, lookX, lookY, lookZ);
+      if (view && diver) refreshMeshScreen(view, diver);
+      else if (view) refreshBodyScreen(view, diverX, diverY, diverZ, lookX, lookY, lookZ);
       else bodyReady = false;
       for (let i = 0; i < guideFades.length; i++) {
         const mesh = guideFades[i];
@@ -277,6 +279,56 @@ const BODY_SCREEN: Array<[number, number, number]> = [
   [0.58, 0.14, -0.06],
   [-0.58, 0.14, -0.06],
 ];
+
+const meshCorner = new Vector3();
+
+/** Screen box of the real diver meshes, head included. A link that crosses it is hidden. */
+function refreshMeshScreen(cam: PerspectiveCamera, diver: Object3D): void {
+  bodyReady = false;
+  bodyMinX = 2;
+  bodyMaxX = -2;
+  bodyMinY = 2;
+  bodyMaxY = -2;
+  cam.updateMatrixWorld();
+  cam.getWorldDirection(screenFwd);
+  bodyTan = Math.tan((cam.fov * Math.PI) / 360) || 0.4;
+  bodyAspect = Math.max(0.3, cam.aspect);
+  diver.updateWorldMatrix(true, true);
+  diver.traverse((obj) => {
+    const mesh = obj as Mesh;
+    if (!mesh.isMesh) return;
+    const geo = mesh.geometry;
+    if (!geo.boundingBox) geo.computeBoundingBox();
+    const bb = geo.boundingBox;
+    if (!bb) return;
+    for (let i = 0; i < 8; i++) {
+      meshCorner.set(
+        i & 1 ? bb.max.x : bb.min.x,
+        i & 2 ? bb.max.y : bb.min.y,
+        i & 4 ? bb.max.z : bb.min.z,
+      );
+      meshCorner.applyMatrix4(mesh.matrixWorld);
+      const fx = meshCorner.x - cam.position.x;
+      const fy = meshCorner.y - cam.position.y;
+      const fz = meshCorner.z - cam.position.z;
+      if (fx * screenFwd.x + fy * screenFwd.y + fz * screenFwd.z < 0.2) continue;
+      screenA.copy(meshCorner).project(cam);
+      if (screenA.z < -1 || screenA.z > 1) continue;
+      bodyMinX = Math.min(bodyMinX, screenA.x);
+      bodyMaxX = Math.max(bodyMaxX, screenA.x);
+      bodyMinY = Math.min(bodyMinY, screenA.y);
+      bodyMaxY = Math.max(bodyMaxY, screenA.y);
+    }
+  });
+  if (bodyMaxX < bodyMinX) return;
+  // A few pixels past the mesh, so a line that grazes the head still counts.
+  const pad = 0.035;
+  bodyMinX -= pad;
+  bodyMaxX += pad;
+  bodyMinY -= pad;
+  bodyMaxY += pad;
+  bodyReady = true;
+}
 
 function refreshBodyScreen(
   cam: PerspectiveCamera,

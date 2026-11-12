@@ -7,13 +7,15 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "check": "tsc --noEmit && node scripts/check.mjs"
+    "check": "tsc --noEmit && node scripts/check.mjs",
+    "verify": "node scripts/verify.mjs"
   },
   "dependencies": {
     "three": "0.170.0"
   },
   "devDependencies": {
     "@types/three": "^0.170.0",
+    "playwright-core": "^1.65.0",
     "typescript": "5.6.3",
     "vite": "6.0.6"
   }

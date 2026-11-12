@@ -127,6 +127,10 @@ export class Game {
   private just = new Set<string>();
   private mouseDX = 0;
   private touchDX = 0;
+  /** Touch aim lock. Kept until another creature is clearly closer to the bracket centre. */
+  private aimHold: { species: string; x: number; y: number; z: number } | null = null;
+  private readonly aimNdc = new Vector3();
+  private readonly fitNdc = new Vector3();
   private touchDY = 0;
   private steerId: number | null = null;
   private steerX = 0;
@@ -619,6 +623,7 @@ export class Game {
         this.look.x,
         this.look.y,
         this.look.z,
+        this.diver,
       );
       moveSnell(this.world.snell, this.cam.position.x, this.cam.position.z);
       if (this.debugOn && this.mode === 'dive') {
@@ -826,36 +831,58 @@ export class Game {
   private assistTouchAim(): void {
     if (!this.touch || !this.viewfinder || this.paused) return;
     const drag = Math.hypot(this.touchDX, this.touchDY);
-    if (drag > 36) return;
+    if (drag > 36) {
+      this.aimHold = null;
+      return;
+    }
     const gate = drag > 12 ? 0.28 : 1;
     const eyeY = this.feet.y + 1.15;
-    let best = 0;
-    let yawErr = 0;
-    let pitchErr = 0;
+    this.fpCam.updateMatrixWorld();
     const snaps = this.life.snaps;
+    let bestI = -1;
+    let bestOff = 1e9;
+    let holdI = -1;
+    let holdOff = 1e9;
     for (let i = 0; i < snaps.length; i++) {
       const s = snaps[i];
-      const dx = s.x - this.feet.x;
-      const dy = s.y - eyeY;
-      const dz = s.z - this.feet.z;
-      const dist = Math.hypot(dx, dy, dz);
+      const dist = Math.hypot(s.x - this.feet.x, s.y - eyeY, s.z - this.feet.z);
       if (dist < 0.7 || dist > 12) continue;
-      const wantYaw = Math.atan2(dx, dz);
-      const wantPitch = Math.atan2(dy, Math.hypot(dx, dz));
-      let dyaw = wantYaw - this.viewYaw;
-      while (dyaw > Math.PI) dyaw -= Math.PI * 2;
-      while (dyaw < -Math.PI) dyaw += Math.PI * 2;
-      const dpitch = wantPitch - this.viewPitch;
-      const err = Math.hypot(dyaw, dpitch);
-      if (err > 0.58) continue;
-      const score = 1 / (0.04 + err) + 0.2 / dist;
-      if (score > best) {
-        best = score;
-        yawErr = dyaw;
-        pitchErr = dpitch;
+      this.aimNdc.set(s.x, s.y, s.z).project(this.fpCam);
+      if (this.aimNdc.z <= 0 || this.aimNdc.z >= 1) continue;
+      const off = Math.hypot(this.aimNdc.x, this.aimNdc.y);
+      if (off > 0.72) continue;
+      if (off < bestOff) {
+        bestOff = off;
+        bestI = i;
+      }
+      const held = this.aimHold;
+      if (
+        held &&
+        held.species === s.species &&
+        Math.hypot(held.x - s.x, held.y - s.y, held.z - s.z) < 1.4 &&
+        off < holdOff
+      ) {
+        holdOff = off;
+        holdI = i;
       }
     }
-    if (best <= 0) return;
+    // Stay on the locked creature unless another is nearer the bracket centre.
+    const pick = holdI >= 0 && holdOff <= bestOff + 0.09 ? holdI : bestI;
+    if (pick < 0) {
+      this.aimHold = null;
+      return;
+    }
+    const s = snaps[pick];
+    this.aimHold = { species: s.species, x: s.x, y: s.y, z: s.z };
+    const dx = s.x - this.feet.x;
+    const dy = s.y - eyeY;
+    const dz = s.z - this.feet.z;
+    const wantYaw = Math.atan2(dx, dz);
+    const wantPitch = Math.atan2(dy, Math.hypot(dx, dz));
+    let yawErr = wantYaw - this.viewYaw;
+    while (yawErr > Math.PI) yawErr -= Math.PI * 2;
+    while (yawErr < -Math.PI) yawErr += Math.PI * 2;
+    const pitchErr = wantPitch - this.viewPitch;
     const cap = 0.055 * gate;
     this.viewYaw += clamp(yawErr * 0.28 * gate, -cap, cap);
     this.viewPitch = clamp(this.viewPitch + clamp(pitchErr * 0.28 * gate, -cap, cap), -BALANCE.pitchLimit, BALANCE.pitchLimit);
@@ -1368,22 +1395,22 @@ export class Game {
     // suit and fins stay in the lower middle.
     let lead = 2.2 + steep * 0.35;
     // On a slope the gaze sits below the chest so the suit clears the oxygen
-    // panel. On the flat floor that point is under the sand, so the gaze
-    // comes up to the path and then a little under it: high enough that the
-    // beads stay in frame, low enough that the head clears the oxygen panel.
+    // panel. On the flat floor that point is under the sand.
     let lookY = aimY - 0.1 - steep * 1.05;
     const pathY = terrainHeight(this.feet.x + fx * lead, this.feet.z + fz * lead) + 0.78;
-    let floorFit = 1;
-    if (lookY < pathY) {
-      // Level already fits. A steep diver is nearly vertical: the gaze drops
-      // just under the path so the head clears the oxygen panel, and the
-      // camera stays back instead of pulling into the slope.
-      lookY = pathY - steep * 0.42;
-      lead = Math.max(1.45, lead - 0.35);
-      floorFit = 1 + steep * 0.55;
+    // A steep pose on the flat floor used to look under the sand and zoom
+    // out. The pale floor filled the frame, the beads left the top, and only
+    // the fins still read. Look along the bead column instead, and stay on
+    // the same 45° ray. Level swimming keeps the gaze that already fit.
+    const onFloor = lookY < pathY && steep > 0.35;
+    if (onFloor) {
+      lead = 4.2;
+      lookY = terrainHeight(this.feet.x + fx * lead, this.feet.z + fz * lead) + 1.15;
+    } else if (lookY < pathY) {
+      lookY = pathY;
     }
     // Lift scales with the radius, so elevation stays 45°.
-    const zoom = 1.18 * floorFit;
+    const zoom = 1.18;
     const radius = Math.hypot(back, side) * pull * zoom;
     const sideNow = Math.min(radius * (0.48 + steep * 0.16), side * pull * zoom * (1 + steep * 0.55));
     const backNow = Math.sqrt(Math.max(1.2, radius * radius - sideNow * sideNow));
@@ -1391,28 +1418,26 @@ export class Game {
     let sideUse = sideNow;
     let backUse = backNow;
     let liftUse = lift;
-    if (floorFit > 1) {
-      // The flat floor has a rising slope behind the diver. Pulling the whole
-      // rig in hides the lane. Slide off the shelf first, then raise the
-      // camera (still under 49°) before giving up distance.
+    if (onFloor) {
+      // The shelf behind a steep diver can cut the 45° ray. Slide toward the
+      // lane, then step closer along that same ray. Raising the lift is what
+      // pushed the elevation past 50° and left only the fins in frame.
       const baseTan = lift / Math.max(0.01, Math.hypot(backNow, sideNow));
-      const maxTan = Math.tan((49 * Math.PI) / 180);
-      let tan = baseTan;
       const blocked = () => {
         const horiz = Math.hypot(backUse, sideUse);
-        liftUse = horiz * tan;
+        liftUse = horiz * baseTan;
         const x = this.feet.x - fx * backUse + rx * sideUse;
         const z = this.feet.z - fz * backUse + rz * sideUse;
         return aimY + liftUse < terrainHeight(x, z) + 0.85;
       };
       for (let i = 0; i < 24 && blocked(); i++) {
-        if (sideUse > 1.15) sideUse *= 0.82;
-        else if (tan < maxTan - 1e-4) tan = Math.min(maxTan, tan + 0.035);
+        if (sideUse > 0.55) sideUse *= 0.82;
         else {
           backUse *= 0.9;
           sideUse *= 0.9;
         }
       }
+      liftUse = Math.hypot(backUse, sideUse) * baseTan;
     } else {
       const place = (s: number) => ({
         x: this.feet.x - fx * backUse * s + rx * sideUse * s,
@@ -1429,6 +1454,24 @@ export class Game {
       sideUse *= scale;
       backUse *= scale;
       liftUse *= scale;
+    }
+    // If the mesh hangs into the oxygen panel, step back along the same ray.
+    // Elevation stays put. The look stays where it was, so the beads do too.
+    this.cam.up.set(0, 1, 0);
+    for (let pass = 0; pass < 7; pass++) {
+      this.cam.position.set(this.feet.x - fx * backUse + rx * sideUse, aimY + liftUse, this.feet.z - fz * backUse + rz * sideUse);
+      this.cam.lookAt(this.feet.x + fx * lead, lookY, this.feet.z + fz * lead);
+      this.cam.updateMatrixWorld(true);
+      const box = this.diverBox();
+      const low = box.minY < -0.56 || box.behind > 0;
+      const wide = box.minX < -0.9 || box.maxX > 0.9;
+      if (!low && !wide) break;
+      if (wide && sideUse > 0.35) sideUse *= 0.84;
+      if (!low || backUse > 12) break;
+      const held = liftUse / Math.max(0.01, Math.hypot(backUse, sideUse));
+      backUse *= 1.16;
+      sideUse *= 1.16;
+      liftUse = Math.hypot(backUse, sideUse) * held;
     }
     const parked = {
       x: this.feet.x - fx * backUse + rx * sideUse,
@@ -1453,6 +1496,39 @@ export class Game {
     );
     this.cam.up.set(0, 1, 0);
     this.cam.lookAt(this.feet.x + fx * lead, lookY, this.feet.z + fz * lead);
+  }
+
+  /** Projected mesh box of the suit, in NDC. Used to keep a steep diver in frame. */
+  private diverBox(): { minX: number; maxX: number; minY: number; maxY: number; n: number; behind: number } {
+    this.diver.updateWorldMatrix(true, true);
+    let minX = 2;
+    let maxX = -2;
+    let minY = 2;
+    let maxY = -2;
+    let n = 0;
+    let behind = 0;
+    this.diver.traverse((obj) => {
+      const mesh = obj as Mesh;
+      if (!mesh.isMesh) return;
+      const geo = mesh.geometry;
+      if (!geo.boundingBox) geo.computeBoundingBox();
+      const bb = geo.boundingBox;
+      if (!bb) return;
+      for (let i = 0; i < 8; i++) {
+        this.fitNdc.set(i & 1 ? bb.max.x : bb.min.x, i & 2 ? bb.max.y : bb.min.y, i & 4 ? bb.max.z : bb.min.z);
+        this.fitNdc.applyMatrix4(mesh.matrixWorld).project(this.cam);
+        n++;
+        if (this.fitNdc.z <= 0 || this.fitNdc.z >= 1) {
+          behind++;
+          continue;
+        }
+        minX = Math.min(minX, this.fitNdc.x);
+        maxX = Math.max(maxX, this.fitNdc.x);
+        minY = Math.min(minY, this.fitNdc.y);
+        maxY = Math.max(maxY, this.fitNdc.y);
+      }
+    });
+    return { minX, maxX, minY, maxY, n, behind };
   }
 
   private syncView(): void {
