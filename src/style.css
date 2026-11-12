@@ -559,6 +559,49 @@ body.touch .btn-name { margin-left: 6px; font-size: 13px; }
   body.touch .score-row { margin: 3px 0; }
   body.touch .sum .net { font-size: 22px; }
 }
+@media (max-height: 430px) {
+  .modal {
+    padding: 8px 12px;
+    align-items: center;
+    box-sizing: border-box;
+  }
+  .modal .card {
+    height: auto;
+    max-height: calc(100dvh - 16px);
+    width: min(420px, calc(100vw - 32px));
+    padding: 8px 16px 8px;
+    overflow: hidden;
+    box-sizing: border-box;
+  }
+  .modal .card-body {
+    flex: 0 0 auto;
+    overflow: visible;
+    min-height: auto;
+  }
+  .card h2 { font-size: 16px; margin: 2px 0; }
+  .card .who { margin: 0 0 2px; }
+  .card img { height: 28px; max-height: 28px; width: 100%; aspect-ratio: auto; object-fit: cover; }
+  .score-row { margin: 1px 0; }
+  .total-line { margin-top: 2px; }
+  .total-line b { font-size: 22px; line-height: 1; }
+  .comment { margin: 2px 0; font-size: 12px; }
+  .prize { font-size: 13px; }
+  .modal .card .actions { margin-top: 4px; padding-top: 4px; }
+  .modal .card .actions button { min-height: 32px; padding: 4px 12px; }
+  body.touch .modal .card {
+    height: auto;
+    width: min(420px, calc(100vw - 32px));
+    max-width: calc(100vw - 32px);
+    padding: 8px 16px 8px;
+    overflow: hidden;
+  }
+  body.touch .card-body { flex: 0 0 auto; overflow: visible; min-height: auto; }
+  body.touch .card img { height: 28px; max-height: 28px; aspect-ratio: auto; }
+  body.touch .score-row { margin: 1px 0; }
+  body.touch .comment { margin: 2px 0; font-size: 12px; }
+  body.touch .modal .card .actions { margin-top: 4px; padding-top: 4px; }
+  body.touch .modal .card .actions button { min-height: 36px; padding: 6px 12px; }
+}
 .rotate-overlay p { margin: 0; max-width: 16em; font-size: 28px; line-height: 1.4; }
 body.touch .steer-zone {
   position: absolute;
